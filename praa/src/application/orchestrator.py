@@ -9,6 +9,7 @@ Contains zero business logic — pure wiring.
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 from src.domain.audio.service import AudioService
 from src.domain.clipboard.service import TkinterClipboardService
@@ -16,6 +17,7 @@ from src.domain.config.service import ConfigService
 from src.domain.processor.service import ProcessorService
 from src.domain.tray.service import PystrayTrayService
 from src.domain.tts.service import EdgeTTSService
+from src.domain.widget.service import WidgetService
 from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import (
     ConfigChanged,
@@ -26,6 +28,7 @@ from src.infrastructure.events import (
     PlaybackStarted,
     PlaybackStopped,
     SynthesisComplete,
+    SynthesisStarted,
     TextCaptured,
     TextProcessed,
     TrayAction,
@@ -53,6 +56,7 @@ class Orchestrator:
         tts_service: EdgeTTSService,
         audio_service: AudioService,
         tray_service: PystrayTrayService,
+        widget_service: Optional[WidgetService] = None,
     ) -> None:
         self._event_bus = event_bus
         self._clipboard = clipboard_service
@@ -61,6 +65,7 @@ class Orchestrator:
         self._tts = tts_service
         self._audio = audio_service
         self._tray = tray_service
+        self._widget = widget_service
 
     def wire(self) -> None:
         """
@@ -74,6 +79,7 @@ class Orchestrator:
             HotkeyPressed(STOP) → audio.handle_hotkey_stop()
             TrayAction → audio.handle_tray_action()
             PlaybackStarted/Stopped/Paused/Resumed → tray.handle_*()
+            (All events) → widget.on_*() [if widget mode]
         """
         bus = self._event_bus
 
@@ -102,6 +108,17 @@ class Orchestrator:
         bus.subscribe(PlaybackStopped, self._tray.handle_playback_stopped)
         bus.subscribe(PlaybackPaused, self._tray.handle_playback_paused)
         bus.subscribe(PlaybackResumed, self._tray.handle_playback_resumed)
+
+        # --- Widget subscriptions (if widget mode is active) ---
+        if self._widget is not None:
+            bus.subscribe(HotkeyPressed, self._widget.on_hotkey_pressed)
+            bus.subscribe(TextCaptured, self._widget.on_text_captured)
+            bus.subscribe(SynthesisStarted, self._widget.on_synthesis_started)
+            bus.subscribe(SynthesisComplete, self._widget.on_synthesis_complete)
+            bus.subscribe(TextProcessed, self._widget.on_text_processed)
+            bus.subscribe(PlaybackStarted, self._widget.on_playback_started)
+            bus.subscribe(PlaybackStopped, self._widget.on_playback_stopped)
+            bus.subscribe(TrayAction, self._widget.on_tray_action)
 
         logger.info(
             "Orchestrator wired: %d subscriptions registered",

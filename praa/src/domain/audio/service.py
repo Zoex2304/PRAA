@@ -50,6 +50,9 @@ class AudioService:
         self._consumer_thread: threading.Thread | None = None
         self._running = False
 
+        # Track chunk metadata for playback events
+        self._chunk_meta: dict[str, tuple[int, int]] = {}  # path_str -> (index, total)
+
     def start(self) -> None:
         """Start the audio consumer thread."""
         if self._consumer_thread is not None:
@@ -85,27 +88,34 @@ class AudioService:
         back to the event bus (thread-safe via run_coroutine_threadsafe).
         """
         while self._running:
-            audio_path = self._queue.dequeue(timeout=0.5)
+            try:
+                audio_path = self._queue.dequeue(timeout=0.5)
 
-            if audio_path is None:
-                continue
+                if audio_path is None:
+                    continue
 
-            if not audio_path.exists():
-                logger.warning("Audio file missing: %s", audio_path)
-                continue
+                if not audio_path.exists():
+                    logger.warning("Audio file missing: %s", audio_path)
+                    continue
 
-            # Publish playback start event
-            self._publish_event(PlaybackStarted())
+                # Publish playback start event with chunk metadata
+                meta = self._chunk_meta.get(str(audio_path), (0, 1))
+                logger.debug("Starting playback for chunk %s/%s: %s", meta[0], meta[1], audio_path.name)
+                
+                self._publish_event(PlaybackStarted(chunk_index=meta[0], total_chunks=meta[1]))
 
-            # Play the audio (blocks until done or stopped)
-            self._player.play(audio_path)
+                # Play the audio (blocks until done or stopped)
+                self._player.play(audio_path)
 
-            # Clean up temp file after playback
-            self._cleanup_temp_file(audio_path)
+                # NOTE: Don't delete temp files — needed for Save Audio feature.
+                # Cleanup happens on app shutdown via TTS service.
 
-            # Publish playback stop event
-            if not self._player.is_playing:
-                self._publish_event(PlaybackStopped(reason="completed"))
+                # Publish playback stop event
+                if not self._player.is_playing:
+                    self._publish_event(PlaybackStopped(reason="completed"))
+                    
+            except Exception:
+                logger.exception("Error in audio consumer loop")
 
     def _publish_event(self, event: object) -> None:
         """Thread-safe event publishing from the consumer thread."""
@@ -127,6 +137,8 @@ class AudioService:
 
     async def handle_synthesis_complete(self, event: SynthesisComplete) -> None:
         """Enqueue a synthesized audio chunk for playback."""
+        # Store chunk metadata for PlaybackStarted events
+        self._chunk_meta[str(event.audio_path)] = (event.chunk_index, event.total_chunks)
         self._queue.enqueue(event.audio_path)
         logger.debug(
             "Audio enqueued: chunk %d/%d",

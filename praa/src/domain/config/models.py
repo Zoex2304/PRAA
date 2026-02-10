@@ -10,6 +10,12 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal
 
+
+class UIMode(str, Enum):
+    """Application UI mode."""
+    WIDGET = "widget"
+    SILENT = "silent"
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -65,6 +71,16 @@ class AppConfig(BaseModel):
         ge=0.5,
         le=2.0,
         description="TTS speech rate multiplier (0.5x to 2.0x)",
+    )
+
+    # --- UI settings ---
+    ui_mode: UIMode = Field(
+        default=UIMode.WIDGET,
+        description="UI mode: 'widget' (floating window) or 'silent' (tray only)",
+    )
+    auto_copy: bool = Field(
+        default=True,
+        description="Auto-copy selected text when READ hotkey is pressed",
     )
 
     # --- Language settings ---

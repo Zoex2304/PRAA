@@ -77,6 +77,8 @@ class PystrayTrayService:
     def _create_menu(self) -> Menu:
         """Build the right-click context menu."""
         return Menu(
+            MenuItem("🖥 Show/Hide Widget", self._on_toggle_widget, default=True),
+            pystray.Menu.SEPARATOR,
             MenuItem("▶ Resume", self._on_resume, visible=lambda _: self._state == PlaybackState.PAUSED),
             MenuItem("⏸ Pause", self._on_pause, visible=lambda _: self._state == PlaybackState.PLAYING),
             MenuItem("⏹ Stop", self._on_stop),
@@ -95,6 +97,11 @@ class PystrayTrayService:
             pystray.Menu.SEPARATOR,
             MenuItem("Exit", self._on_exit),
         )
+
+    def _on_toggle_widget(self, icon=None, item=None) -> None:
+        self._publish_event(TrayAction(action=TrayActionType.TOGGLE_MODE, value="toggle_window"))
+    
+    # _on_show_widget removed in favor of toggle
 
     def _get_tooltip(self) -> str:
         """Generate tooltip text based on current state."""
@@ -129,6 +136,8 @@ class PystrayTrayService:
 
     def _on_change_voice(self, gender: str) -> None:
         self._publish_event(TrayAction(action=TrayActionType.CHANGE_VOICE, value=gender))
+
+
 
     def _publish_event(self, event: object) -> None:
         """Thread-safe event publishing from pystray's thread."""

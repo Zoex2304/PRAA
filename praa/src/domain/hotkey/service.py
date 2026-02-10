@@ -3,12 +3,16 @@ Hotkey Domain — pynput-based Global Hotkey Service
 
 Concrete implementation of IHotkeyListener using pynput.
 Publishes HotkeyPressed events — knows nothing about clipboard, TTS, or audio (SRP).
+
+Auto-copy: When READ hotkey is triggered, simulates Ctrl+C first so the user
+only needs to select text and press the hotkey (no manual copy required).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Callable
 
 from pynput import keyboard
@@ -61,6 +65,8 @@ class PynputHotkeyService:
     When a registered combination is pressed, publishes a HotkeyPressed event
     to the EventBus. This service has no knowledge of what happens after
     the event is published — pure SRP.
+
+    For READ hotkey: auto-copies selected text via Ctrl+C before publishing.
     """
 
     def __init__(self, config: AppConfig, event_bus: EventBus, loop: asyncio.AbstractEventLoop) -> None:
@@ -75,8 +81,11 @@ class PynputHotkeyService:
         self._pressed: set[keyboard.Key | keyboard.KeyCode] = set()
         self._listener: keyboard.Listener | None = None
 
+        # Controller for simulating Ctrl+C (auto-copy)
+        self._controller = keyboard.Controller()
+
         logger.info(
-            "Hotkey service initialized: READ=%s, STOP=%s",
+            "[bold]Hotkey service[/]: READ=[cyan]%s[/], STOP=[cyan]%s[/]",
             config.hotkey_read,
             config.hotkey_stop,
         )
@@ -92,12 +101,12 @@ class PynputHotkeyService:
         normalized = self._normalize_pressed()
 
         if self._hotkey_read.issubset(normalized):
-            logger.debug("Hotkey READ triggered")
-            self._publish_event(HotkeyAction.READ)
+            logger.info("[bold green]READ hotkey[/] triggered — auto-copying selection")
             self._pressed.clear()
+            self._auto_copy_and_publish(HotkeyAction.READ)
 
         elif self._hotkey_stop.issubset(normalized):
-            logger.debug("Hotkey STOP triggered")
+            logger.info("[bold red]STOP hotkey[/] triggered")
             self._publish_event(HotkeyAction.STOP)
             self._pressed.clear()
 
@@ -129,6 +138,29 @@ class PynputHotkeyService:
             else:
                 normalized.add(key)
         return normalized
+
+    def _auto_copy_and_publish(self, action: HotkeyAction) -> None:
+        """Release modifiers, simulate Ctrl+C, then publish the event.
+
+        This allows users to just select text and press the hotkey —
+        no manual Ctrl+C required.
+        """
+        try:
+            # Release currently held modifier keys to avoid Ctrl+Shift+C
+            self._controller.release(keyboard.Key.shift)
+            self._controller.release(keyboard.Key.ctrl_l)
+            time.sleep(0.05)
+
+            # Simulate Ctrl+C
+            with self._controller.pressed(keyboard.Key.ctrl_l):
+                self._controller.tap(keyboard.KeyCode.from_vk(0x43))  # 'C'
+            time.sleep(0.15)  # Wait for clipboard to update
+
+        except Exception:
+            logger.exception("Auto-copy failed, proceeding with existing clipboard")
+
+        # Publish event regardless — clipboard service will read whatever is there
+        self._publish_event(action)
 
     def _publish_event(self, action: HotkeyAction) -> None:
         """Thread-safe event publishing from pynput's listener thread."""

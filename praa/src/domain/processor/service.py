@@ -51,7 +51,13 @@ class ProcessorService:
             event: TextCaptured event with raw clipboard text.
         """
         raw_text = event.raw_text
-        logger.info("Processing text: %d characters", len(raw_text))
+        preview = raw_text[:100].replace("\n", " ")
+        logger.info(
+            "[bold green]Processing[/]: %d chars — [dim]%s%s[/]",
+            len(raw_text),
+            preview,
+            "..." if len(raw_text) > 100 else "",
+        )
 
         # Step 1: Clean
         clean_text = self._cleaner.clean(raw_text)

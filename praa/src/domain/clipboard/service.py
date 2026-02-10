@@ -69,9 +69,16 @@ class TkinterClipboardService:
         """
         text = self.read()
         if text:
+            preview = text[:80].replace("\n", " ")
+            logger.info(
+                "[bold cyan]Clipboard captured[/]: %d chars — [dim]%s%s[/]",
+                len(text),
+                preview,
+                "..." if len(text) > 80 else "",
+            )
             await self._event_bus.publish(TextCaptured(raw_text=text))
         else:
-            logger.info("No text in clipboard to capture")
+            logger.warning("[yellow]Clipboard empty[/] — no text to capture")
 
     def cleanup(self) -> None:
         """Destroy the hidden tkinter root window."""

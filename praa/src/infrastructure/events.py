@@ -24,7 +24,7 @@ class HotkeyAction(Enum):
 
 
 class TrayActionType(Enum):
-    """Actions that can be triggered from the system tray menu."""
+    """Actions that can be triggered from the system tray or widget."""
     PLAY_LAST = auto()
     PAUSE = auto()
     RESUME = auto()
@@ -32,6 +32,8 @@ class TrayActionType(Enum):
     EXIT = auto()
     CHANGE_SPEED = auto()
     CHANGE_VOICE = auto()
+    TOGGLE_MODE = auto()
+    SAVE_AUDIO = auto()
 
 
 class PlaybackState(Enum):
@@ -95,6 +97,9 @@ class SynthesisComplete:
     audio_path: Path
     chunk_index: int
     total_chunks: int
+    chunk_text: str = ""
+    word_boundaries: list[tuple[float, float, str, int, int]] = field(default_factory=list)
+    # Each tuple: (offset_seconds, duration_seconds, word, text_offset, word_len)
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +148,17 @@ class ConfigChanged:
     key: str
     old_value: object
     new_value: object
+
+
+# ---------------------------------------------------------------------------
+# Events — Widget Layer
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class WidgetAction:
+    """Emitted when the user interacts with the floating widget."""
+    action: TrayActionType
+    value: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

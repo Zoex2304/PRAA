@@ -1,8 +1,8 @@
 """
-PRAA Logging — Structured Logger Configuration
+PRAA Logging — Rich Console + File Logging
 
-Centralizes log configuration so all domain modules use a consistent
-format and output destination. Import setup_logging() once at bootstrap.
+Provides beautiful, colorized terminal output using Rich's RichHandler,
+while keeping an optional plain-text file handler for debug output.
 """
 
 from __future__ import annotations
@@ -11,8 +11,9 @@ import logging
 import sys
 from pathlib import Path
 
+from rich.logging import RichHandler
 
-LOG_FORMAT = "%(asctime)s | %(levelname)-7s | %(name)-30s | %(message)s"
+LOG_FORMAT = "%(message)s"
 LOG_DATE_FORMAT = "%H:%M:%S"
 
 
@@ -21,7 +22,7 @@ def setup_logging(
     log_file: Path | None = None,
 ) -> None:
     """
-    Configure the root logger for PRAA.
+    Configure the root logger for PRAA with Rich console output.
 
     Args:
         level: Minimum log level (default: INFO).
@@ -33,21 +34,29 @@ def setup_logging(
     # Clear existing handlers to avoid duplicates on re-init
     root_logger.handlers.clear()
 
-    # Console handler — always active
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(level)
-    console_handler.setFormatter(
-        logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+    # Rich console handler — colorized, structured output
+    rich_handler = RichHandler(
+        level=level,
+        show_time=True,
+        show_level=True,
+        show_path=True,
+        markup=True,
+        rich_tracebacks=True,
+        tracebacks_show_locals=False,
+        log_time_format=LOG_DATE_FORMAT,
     )
-    root_logger.addHandler(console_handler)
+    root_logger.addHandler(rich_handler)
 
-    # File handler — optional, for debug mode
+    # File handler — optional, for debug mode (plain text)
     if log_file is not None:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_file, encoding="utf-8")
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(
-            logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+            logging.Formatter(
+                "%(asctime)s | %(levelname)-7s | %(name)-30s | %(message)s",
+                datefmt=LOG_DATE_FORMAT,
+            )
         )
         root_logger.addHandler(file_handler)
 
@@ -55,3 +64,4 @@ def setup_logging(
     logging.getLogger("pynput").setLevel(logging.WARNING)
     logging.getLogger("PIL").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("asyncio").setLevel(logging.WARNING)

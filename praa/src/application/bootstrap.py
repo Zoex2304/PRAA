@@ -16,12 +16,15 @@ from pathlib import Path
 from src.application.orchestrator import Orchestrator
 from src.domain.audio.service import AudioService
 from src.domain.clipboard.service import TkinterClipboardService
-from src.domain.config.models import AppConfig
+from src.domain.config.models import AppConfig, UIMode
 from src.domain.config.service import ConfigService
 from src.domain.hotkey.service import PynputHotkeyService
 from src.domain.processor.service import ProcessorService
 from src.domain.tray.service import PystrayTrayService
 from src.domain.tts.service import EdgeTTSService
+from src.domain.widget.service import WidgetService
+from src.domain.session.service import SessionService
+from src.infrastructure.database import DatabaseManager
 from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import AppShutdown, AppStarted, TrayAction, TrayActionType
 from src.infrastructure.logging import setup_logging
@@ -56,11 +59,22 @@ class Application:
         self._tts_service: EdgeTTSService | None = None
         self._audio_service: AudioService | None = None
         self._tray_service: PystrayTrayService | None = None
+        self._tray_service: PystrayTrayService | None = None
+        self._widget_service: WidgetService | None = None
         self._orchestrator: Orchestrator | None = None
+        self._db_manager: DatabaseManager | None = None
+        self._session_service: SessionService | None = None
 
     def _init_services(self, loop: asyncio.AbstractEventLoop) -> None:
         """Instantiate all domain services with their dependencies."""
         config = self._config
+
+        # Database & Session
+        db_path = self._base_dir / "praa_v3.db"
+        cache_dir = self._base_dir / "cache"
+        self._db_manager = DatabaseManager(db_path)
+        self._db_manager.connect()
+        self._session_service = SessionService(self._db_manager, cache_dir)
 
         # Domain services — each gets only what it needs (DIP)
         self._clipboard_service = TkinterClipboardService(self._event_bus)
@@ -76,6 +90,10 @@ class Application:
             icon_path=icon_path if icon_path.exists() else None,
         )
 
+        # Widget service (only in widget mode)
+        if config.ui_mode == UIMode.WIDGET:
+            self._widget_service = WidgetService(config, self._event_bus, loop, self._session_service)
+
         # Orchestrator — wires all event subscriptions
         self._orchestrator = Orchestrator(
             event_bus=self._event_bus,
@@ -85,6 +103,7 @@ class Application:
             tts_service=self._tts_service,
             audio_service=self._audio_service,
             tray_service=self._tray_service,
+            widget_service=self._widget_service,
         )
 
     async def _run(self) -> None:
@@ -108,15 +127,18 @@ class Application:
         self._audio_service.start()
         self._hotkey_service.start()
         self._tray_service.start()
+        if self._widget_service:
+            self._widget_service.start()
 
         await self._event_bus.publish(AppStarted())
 
         logger.info("-" * 50)
-        logger.info("  PRAA is running — listening for hotkeys")
-        logger.info("  READ: %s", self._config.hotkey_read)
-        logger.info("  STOP: %s", self._config.hotkey_stop)
-        logger.info("  Voice: %s", self._config.voice_id)
-        logger.info("  Speed: %.1fx", self._config.speed_rate)
+        logger.info("  [bold]PRAA is running[/] — listening for hotkeys")
+        logger.info("  READ: [cyan]%s[/]", self._config.hotkey_read)
+        logger.info("  STOP: [cyan]%s[/]", self._config.hotkey_stop)
+        logger.info("  Voice: [cyan]%s[/]", self._config.voice_id)
+        logger.info("  Speed: [cyan]%.1fx[/]", self._config.speed_rate)
+        logger.info("  UI Mode: [cyan]%s[/]", self._config.ui_mode.value)
         logger.info("-" * 50)
 
         # Keep running until shutdown
@@ -146,6 +168,10 @@ class Application:
             self._audio_service.stop()
         if self._tray_service:
             self._tray_service.stop()
+        if self._widget_service:
+            self._widget_service.stop()
+        if self._db_manager:
+            self._db_manager.close()
         if self._tts_service:
             self._tts_service.cleanup()
         if self._clipboard_service:
