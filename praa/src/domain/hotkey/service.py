@@ -47,8 +47,9 @@ def _parse_hotkey(hotkey_str: str) -> frozenset[keyboard.Key | keyboard.KeyCode]
             except KeyError:
                 logger.warning("Unknown key name: %s", key_name)
         else:
-            # Single character key
-            keys.add(keyboard.KeyCode.from_char(part))
+            # Single character key — use vk (virtual key code) for reliable
+            # matching when modifier keys are held (Ctrl+Shift changes char)
+            keys.add(keyboard.KeyCode.from_vk(ord(part.upper())))
     return frozenset(keys)
 
 
@@ -107,7 +108,14 @@ class PynputHotkeyService:
         self._pressed.discard(key)
 
     def _normalize_pressed(self) -> set[keyboard.Key | keyboard.KeyCode]:
-        """Normalize modifier keys (e.g., ctrl_r → ctrl_l) for consistent matching."""
+        """Normalize modifier keys and character keys for consistent matching.
+
+        Modifier normalization: ctrl_r → ctrl_l, shift_r → shift, alt_r → alt_l.
+        Character normalization: KeyCode(char, vk) → KeyCode.from_vk(vk) so that
+        hash values match those produced by _parse_hotkey. This is necessary
+        because pynput's KeyCode.__hash__ differs between from_char and from_vk
+        forms even when __eq__ returns True.
+        """
         normalized: set[keyboard.Key | keyboard.KeyCode] = set()
         for key in self._pressed:
             if key == keyboard.Key.ctrl_r:
@@ -116,6 +124,8 @@ class PynputHotkeyService:
                 normalized.add(keyboard.Key.shift)
             elif key == keyboard.Key.alt_r:
                 normalized.add(keyboard.Key.alt_l)
+            elif isinstance(key, keyboard.KeyCode) and key.vk is not None:
+                normalized.add(keyboard.KeyCode.from_vk(key.vk))
             else:
                 normalized.add(key)
         return normalized
