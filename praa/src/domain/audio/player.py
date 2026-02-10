@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
+from typing import Callable, Optional
 
 import numpy as np
 import sounddevice as sd
@@ -47,12 +48,13 @@ class SoundDevicePlayer:
         """Whether audio is currently paused."""
         return self._paused
 
-    def play(self, audio_path: Path) -> None:
+    def play(self, audio_path: Path, on_start: Optional[Callable[[], None]] = None) -> None:
         """
         Play an audio file. Blocks until playback completes or is stopped.
 
         Args:
             audio_path: Path to the audio file (.mp3, .wav, etc.).
+            on_start: Optional callback invoked immediately after stream starts.
         """
         try:
             # Read audio file
@@ -81,6 +83,8 @@ class SoundDevicePlayer:
                 dtype="float32",
             )
             stream.start()
+            if on_start:
+                on_start()
 
             try:
                 while position < len(data):

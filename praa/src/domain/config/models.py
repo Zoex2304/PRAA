@@ -97,6 +97,13 @@ class AppConfig(BaseModel):
         description="Maximum character count per TTS chunk",
     )
 
+    playback_latency_ms: int = Field(
+        default=0,
+        ge=-500,
+        le=500,
+        description="Audio latency compensation in milliseconds (positive = audio is late)",
+    )
+
     @field_validator("speed_rate")
     @classmethod
     def validate_speed_rate(cls, v: float) -> float:

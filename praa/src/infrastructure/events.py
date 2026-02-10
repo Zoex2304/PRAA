@@ -111,6 +111,7 @@ class PlaybackStarted:
     """Emitted when audio playback begins."""
     chunk_index: int = 0
     total_chunks: int = 1
+    timestamp: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -128,7 +129,7 @@ class PlaybackPaused:
 @dataclass(frozen=True)
 class PlaybackResumed:
     """Emitted when audio playback resumes from pause."""
-    pass
+    timestamp: float = 0.0
 
 
 # ---------------------------------------------------------------------------

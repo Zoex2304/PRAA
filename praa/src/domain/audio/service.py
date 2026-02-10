@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from pathlib import Path
 
 from src.domain.audio.player import SoundDevicePlayer
@@ -99,13 +100,19 @@ class AudioService:
                     continue
 
                 # Publish playback start event with chunk metadata
-                meta = self._chunk_meta.get(str(audio_path), (0, 1))
+                meta = self._chunk_meta.get(audio_path.name, (0, 1))
                 logger.debug("Starting playback for chunk %s/%s: %s", meta[0], meta[1], audio_path.name)
                 
-                self._publish_event(PlaybackStarted(chunk_index=meta[0], total_chunks=meta[1]))
+                # Define callback to capture exact start time
+                def on_start() -> None:
+                    self._publish_event(PlaybackStarted(
+                        chunk_index=meta[0],
+                        total_chunks=meta[1],
+                        timestamp=time.time()
+                    ))
 
                 # Play the audio (blocks until done or stopped)
-                self._player.play(audio_path)
+                self._player.play(audio_path, on_start=on_start)
 
                 # NOTE: Don't delete temp files — needed for Save Audio feature.
                 # Cleanup happens on app shutdown via TTS service.
@@ -138,7 +145,7 @@ class AudioService:
     async def handle_synthesis_complete(self, event: SynthesisComplete) -> None:
         """Enqueue a synthesized audio chunk for playback."""
         # Store chunk metadata for PlaybackStarted events
-        self._chunk_meta[str(event.audio_path)] = (event.chunk_index, event.total_chunks)
+        self._chunk_meta[event.audio_path.name] = (event.chunk_index, event.total_chunks)
         self._queue.enqueue(event.audio_path)
         logger.debug(
             "Audio enqueued: chunk %d/%d",
@@ -168,4 +175,6 @@ class AudioService:
 
         elif event.action == TrayActionType.RESUME:
             self._player.resume()
-            self._publish_event(PlaybackResumed())
+        elif event.action == TrayActionType.RESUME:
+            self._player.resume()
+            self._publish_event(PlaybackResumed(timestamp=time.time()))

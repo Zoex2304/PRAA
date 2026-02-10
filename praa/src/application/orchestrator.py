@@ -83,6 +83,19 @@ class Orchestrator:
         """
         bus = self._event_bus
 
+        # --- Prio: Widget First (Start UI state clean) ---
+        if self._widget is not None:
+            bus.subscribe(HotkeyPressed, self._widget.on_hotkey_pressed)
+            bus.subscribe(TextCaptured, self._widget.on_text_captured)
+            bus.subscribe(SynthesisStarted, self._widget.on_synthesis_started)
+            bus.subscribe(SynthesisComplete, self._widget.on_synthesis_complete)
+            bus.subscribe(TextProcessed, self._widget.on_text_processed)
+            bus.subscribe(PlaybackStarted, self._widget.on_playback_started)
+            bus.subscribe(PlaybackPaused, self._widget.on_playback_paused)
+            bus.subscribe(PlaybackResumed, self._widget.on_playback_resumed)
+            bus.subscribe(PlaybackStopped, self._widget.on_playback_stopped)
+            bus.subscribe(TrayAction, self._widget.on_tray_action)
+
         # --- Input → Processing pipeline ---
         bus.subscribe(HotkeyPressed, self._handle_hotkey)
         bus.subscribe(TextCaptured, self._processor.handle_text_captured)
@@ -109,16 +122,7 @@ class Orchestrator:
         bus.subscribe(PlaybackPaused, self._tray.handle_playback_paused)
         bus.subscribe(PlaybackResumed, self._tray.handle_playback_resumed)
 
-        # --- Widget subscriptions (if widget mode is active) ---
-        if self._widget is not None:
-            bus.subscribe(HotkeyPressed, self._widget.on_hotkey_pressed)
-            bus.subscribe(TextCaptured, self._widget.on_text_captured)
-            bus.subscribe(SynthesisStarted, self._widget.on_synthesis_started)
-            bus.subscribe(SynthesisComplete, self._widget.on_synthesis_complete)
-            bus.subscribe(TextProcessed, self._widget.on_text_processed)
-            bus.subscribe(PlaybackStarted, self._widget.on_playback_started)
-            bus.subscribe(PlaybackStopped, self._widget.on_playback_stopped)
-            bus.subscribe(TrayAction, self._widget.on_tray_action)
+
 
         logger.info(
             "Orchestrator wired: %d subscriptions registered",

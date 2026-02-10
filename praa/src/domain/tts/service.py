@@ -72,18 +72,18 @@ class EdgeTTSService:
                     if chunk["type"] == "audio":
                         f.write(chunk["data"])
                     elif chunk["type"] == "WordBoundary":
-                        # Convert from 100-ns to seconds
-                        offset_sec = chunk["offset"] / 10_000_000
-                        duration_sec = chunk["duration"] / 10_000_000
+                        # Convert from 100-ns to milliseconds
+                        offset_ms = chunk["offset"] / 10_000
+                        duration_ms = chunk["duration"] / 10_000
                         word = chunk["text"]
-                        word_boundaries.append((offset_sec, duration_sec, word))
+                        word_boundaries.append((offset_ms, duration_ms, word))
                         # logger.debug("Word boundary: %s", word) 
                     elif chunk["type"] == "SentenceBoundary":
                         # Capture sentences as fallback
-                        offset_sec = chunk["offset"] / 10_000_000
-                        duration_sec = chunk["duration"] / 10_000_000
+                        offset_ms = chunk["offset"] / 10_000
+                        duration_ms = chunk["duration"] / 10_000
                         text_chunk = chunk["text"]
-                        sentence_boundaries.append((offset_sec, duration_sec, text_chunk))
+                        sentence_boundaries.append((offset_ms, duration_ms, text_chunk))
                         logger.debug("Sentence boundary captured: %s", text_chunk[:20])
             
             logger.info("Stream finished. Audio: %s bytes. Words: %d. Sentences: %d", output_path.stat().st_size, len(word_boundaries), len(sentence_boundaries))
@@ -212,28 +212,62 @@ class EdgeTTSService:
     ) -> list[tuple[float, float, str]]:
         """
         Generate estimated word boundaries by splitting sentences and distributing duration.
+        Accounts for punctuation pauses to improve sync accuracy.
         """
         estimated = []
+        
+        # Heuristic pause durations (ms)
+        PAUSE_COMMA = 250.0 
+        PAUSE_SENTENCE = 500.0
         
         for s_offset, s_duration, s_text in sentences:
             words = s_text.split()
             if not words:
                 continue
                 
-            # Estimate duration per word (simple average)
-            # A better heuristic might be proportional to word length
-            total_chars = sum(len(w) for w in words)
+            # 1. Analyze words for punctuation pauses
+            word_pauses = []
+            total_pause_duration = 0.0
+            total_chars = 0
+            
+            for word in words:
+                pause = 0.0
+                clean_word = word.strip()
+                if clean_word.endswith(",") or clean_word.endswith(";") or clean_word.endswith(":"):
+                    pause = PAUSE_COMMA
+                elif clean_word.endswith(".") or clean_word.endswith("?") or clean_word.endswith("!"):
+                    pause = PAUSE_SENTENCE
+                
+                word_pauses.append(pause)
+                total_pause_duration += pause
+                total_chars += len(clean_word)
+            
             if total_chars == 0:
                 continue
                 
+            # 2. Calculate active speech duration
+            # Ensure we don't subtract more than available (clamp to 10% of duration minimum)
+            max_pause = s_duration * 0.9
+            actual_pause_total = min(total_pause_duration, max_pause)
+            
+            # Scale pauses if they exceed limit
+            pause_scale = 1.0
+            if total_pause_duration > max_pause:
+                 pause_scale = max_pause / total_pause_duration
+            
+            active_duration = s_duration - actual_pause_total
+            
             current_offset = s_offset
             
-            for word in words:
+            for i, word in enumerate(words):
                 # Proportional duration based on length
                 word_ratio = len(word) / total_chars
-                word_duration = s_duration * word_ratio
+                word_duration = active_duration * word_ratio
                 
                 estimated.append((current_offset, word_duration, word))
-                current_offset += word_duration
+                
+                # Advance offset by word + pause
+                pause = word_pauses[i] * pause_scale
+                current_offset += word_duration + pause
                 
         return estimated
