@@ -1,0 +1,50 @@
+Nuitka-Options: Used command line options:
+Nuitka-Options:   --standalone --onefile --windows-console-mode=disable --output-filename=praa.exe --output-dir=dist --include-package=src --include-package=edge_tts --include-package=pystray --include-package=pynput --include-package=sounddevice --include-package=soundfile --include-package=pydantic --enable-plugin=tk-inter src\main.py
+Nuitka: Starting Python compilation with:
+Nuitka:   Version '4.0' on Python 3.12 (flavor 'CPython Official') commercial grade 'not installed'.
+Nuitka-Plugins:anti-bloat: Not including 'PIL.ImageQt' automatically in order to avoid bloat, but this may cause: PIL will not be able to create Qt image objects.
+Nuitka-Plugins:dll-files: Found 1 file DLLs from _soundfile_data installation.
+Nuitka-Plugins:dll-files: Found 2 files DLLs from sounddevice installation.
+Nuitka will make use of Dependency Walker (https://dependencywalker.com) tool
+to analyze the dependencies of Python extension modules.
+
+Is it OK to download and put it in local user cache.
+
+Fully automatic, cached. Proceed and download? [Yes]/No : Traceback (most recent call last):
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\__main__.py", line 235, in <module>
+    main()
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\__main__.py", line 217, in main
+    nuitka_main()
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\MainControl.py", line 1344, in main
+    _main()
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\MainControl.py", line 1179, in _main
+    _detectEarlyDLLs()
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\MainControl.py", line 1090, in _detectEarlyDLLs
+    detectUsedDLLs(
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\freezer\Standalone.py", line 531, in detectUsedDLLs
+    _detectUsedDLLs(
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\freezer\Standalone.py", line 413, in _detectUsedDLLs
+    used_dll_paths = _detectBinaryDLLs(
+                     ^^^^^^^^^^^^^^^^^^
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\freezer\Standalone.py", line 167, in _detectBinaryDLLs
+    return detectBinaryPathDLLsWin32(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\freezer\DllDependenciesWin32.py", line 382, in detectBinaryPathDLLsWin32
+    result = detectDLLsWithDependencyWalker(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\freezer\DependsExe.py", line 217, in detectDLLsWithDependencyWalker
+    depends_exe = getDependsExePath()
+                  ^^^^^^^^^^^^^^^^^^^
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\freezer\DependsExe.py", line 48, in getDependsExePath
+    return getCachedDownload(
+           ^^^^^^^^^^^^^^^^^^
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\utils\Download.py", line 202, in getCachedDownload
+    if not shouldDownload(
+           ^^^^^^^^^^^^^^^
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\utils\Download.py", line 49, in shouldDownload
+    reply = queryUser(
+            ^^^^^^^^^^
+  File "D:\tts-edge\venv\Lib\site-packages\nuitka\Tracing.py", line 634, in queryUser
+    reply = raw_input() or default
+            ^^^^^^^^^^^
+KeyboardInterrupt

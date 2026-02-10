@@ -1,0 +1,161 @@
+"""
+PRAA Event Definitions — Single Source of Truth
+
+All domain events are defined here. No other module should define events.
+Each event is an immutable dataclass carrying only the data its consumers need (ISP).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum, auto
+from pathlib import Path
+from typing import Optional
+
+
+# ---------------------------------------------------------------------------
+# Enums
+# ---------------------------------------------------------------------------
+
+class HotkeyAction(Enum):
+    """Actions that can be triggered by a global hotkey."""
+    READ = auto()
+    STOP = auto()
+
+
+class TrayActionType(Enum):
+    """Actions that can be triggered from the system tray menu."""
+    PLAY_LAST = auto()
+    PAUSE = auto()
+    RESUME = auto()
+    STOP = auto()
+    EXIT = auto()
+    CHANGE_SPEED = auto()
+    CHANGE_VOICE = auto()
+
+
+class PlaybackState(Enum):
+    """Current state of the audio playback system."""
+    IDLE = auto()
+    PLAYING = auto()
+    PAUSED = auto()
+    STOPPED = auto()
+
+
+class DetectedLanguage(Enum):
+    """Supported languages for TTS voice selection."""
+    INDONESIAN = "id"
+    ENGLISH = "en"
+    UNKNOWN = "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Events — Input Layer
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class HotkeyPressed:
+    """Emitted when a registered global hotkey is pressed."""
+    action: HotkeyAction
+
+
+@dataclass(frozen=True)
+class TextCaptured:
+    """Emitted when clipboard text is successfully captured."""
+    raw_text: str
+
+
+# ---------------------------------------------------------------------------
+# Events — Processing Layer
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class TextProcessed:
+    """Emitted when raw text has been cleaned, language-detected, and chunked."""
+    chunks: list[str]
+    language: DetectedLanguage
+    voice_id: str
+    speed_rate: float = 1.0
+
+
+# ---------------------------------------------------------------------------
+# Events — TTS Layer
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class SynthesisStarted:
+    """Emitted when TTS synthesis begins for a chunk."""
+    chunk_index: int
+    total_chunks: int
+
+
+@dataclass(frozen=True)
+class SynthesisComplete:
+    """Emitted when a single chunk has been synthesized to an audio file."""
+    audio_path: Path
+    chunk_index: int
+    total_chunks: int
+
+
+# ---------------------------------------------------------------------------
+# Events — Output Layer
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class PlaybackStarted:
+    """Emitted when audio playback begins."""
+    chunk_index: int = 0
+    total_chunks: int = 1
+
+
+@dataclass(frozen=True)
+class PlaybackStopped:
+    """Emitted when audio playback completes or is stopped."""
+    reason: str = "completed"  # "completed" | "stopped" | "error"
+
+
+@dataclass(frozen=True)
+class PlaybackPaused:
+    """Emitted when audio playback is paused."""
+    pass
+
+
+@dataclass(frozen=True)
+class PlaybackResumed:
+    """Emitted when audio playback resumes from pause."""
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Events — Control Layer
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class TrayAction:
+    """Emitted when the user interacts with the system tray menu."""
+    action: TrayActionType
+    value: Optional[str] = None  # For CHANGE_SPEED ("1.25") or CHANGE_VOICE ("Gadis")
+
+
+@dataclass(frozen=True)
+class ConfigChanged:
+    """Emitted when configuration is modified at runtime."""
+    key: str
+    old_value: object
+    new_value: object
+
+
+# ---------------------------------------------------------------------------
+# Events — Lifecycle
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class AppStarted:
+    """Emitted when the application has completed initialization."""
+    pass
+
+
+@dataclass(frozen=True)
+class AppShutdown:
+    """Emitted when the application is shutting down gracefully."""
+    reason: str = "user_exit"

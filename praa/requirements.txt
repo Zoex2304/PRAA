@@ -1,0 +1,29 @@
+# PRAA — Personal Read Aloud Assistant
+# Python 3.11+ required
+
+# TTS Engine
+edge-tts
+
+# System Tray
+pystray
+Pillow
+
+# Global Hotkey / Input
+pynput
+
+# Audio Playback
+sounddevice
+soundfile
+
+# Language Detection
+lingua-language-detector
+
+# Config Management
+pydantic>=2.0
+
+# Packaging (dev only)
+nuitka
+
+# Testing (dev only)
+pytest
+pytest-asyncio
