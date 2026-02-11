@@ -71,54 +71,7 @@ COMPACT_HEIGHT = 60
 EXPANDED_HEIGHT = 560
 
 
-class SpectrumAnimator:
-    """
-    SINGLE RESPONSIBILITY: Visual audio spectrum animation.
-    
-    Encapsulates all spectrum bar logic.
-    """
-    
-    def __init__(self, num_bars: int = 16) -> None:
-        self._num_bars = num_bars
-        self._bars = [0.0] * num_bars
-        self._targets = [0.0] * num_bars
-        self._active = False
-        
-    def set_active(self, active: bool) -> None:
-        """Enable/disable spectrum animation."""
-        self._active = active
-        
-    def update(self) -> None:
-        """Update bar heights (call every ~50ms)."""
-        import random
-        
-        for i in range(self._num_bars):
-            if self._active:
-                self._targets[i] = random.uniform(0.2, 1.0)
-            else:
-                self._targets[i] = 0.0
-            
-            # Smooth interpolation
-            diff = self._targets[i] - self._bars[i]
-            self._bars[i] += diff * 0.3
-    
-    def draw(self, canvas, width: int, height: int) -> None:
-        """Draw spectrum on canvas."""
-        canvas.delete("all")
-        
-        bar_width = max(2, (width - self._num_bars * 2) // self._num_bars)
-        gap = 2
-        
-        for i in range(min(self._num_bars, len(self._bars))):
-            bar_h = max(2, self._bars[i] * (height - 4))
-            x = i * (bar_width + gap) + gap
-            y = height - 2
-            color = SPECTRUM_COLORS[i % len(SPECTRUM_COLORS)]
-            
-            canvas.create_rectangle(
-                x, y - bar_h, x + bar_width, y,
-                fill=color, outline="", width=0,
-            )
+from src.domain.widget.spectrum_analyzer import SpectrumAnalyzer
 
 
 class WidgetService:
@@ -156,7 +109,7 @@ class WidgetService:
         self._state_manager: Optional[PlaybackStateManager] = None
         self._sync_controller: Optional[SyncController] = None
         self._transcript_renderer: Optional[TranscriptRenderer] = None
-        self._spectrum: Optional[SpectrumAnimator] = None
+        self._spectrum: Optional[SpectrumAnalyzer] = None
         
         # Session data
         self._transcript_text: Optional[str] = None
@@ -236,7 +189,7 @@ class WidgetService:
         )
         
         self._transcript_renderer = TranscriptRenderer(self._transcript_box)
-        self._spectrum = SpectrumAnimator(num_bars=16)
+        self._spectrum = SpectrumAnalyzer(num_bands=16)
         
         # Start animation loops
         self._animate_spectrum()
@@ -433,15 +386,24 @@ class WidgetService:
     # ---------------------------------------------------------------
 
     def _animate_spectrum(self) -> None:
-        """Spectrum animation loop (50ms intervals)."""
+        """Spectrum animation loop (50ms intervals) — real FFT from audio."""
         if not self._running or self._root is None:
             return
 
         if self._spectrum:
-            self._spectrum.update()
-            
+            # Feed real audio block from AudioService
+            block = None
+            samplerate = 24000
+            if self._audio_service and self._audio_service.is_actively_playing:
+                block = self._audio_service.current_block
+                samplerate = self._audio_service.samplerate
+
+            self._spectrum.update(block=block, samplerate=samplerate)
+
             if self._expanded and hasattr(self, '_large_spectrum'):
-                self._spectrum.draw(self._large_spectrum, WIDGET_WIDTH - 24, 50)
+                self._spectrum.draw(
+                    self._large_spectrum, WIDGET_WIDTH - 24, 50, SPECTRUM_COLORS
+                )
 
         try:
             self._root.after(50, self._animate_spectrum)
@@ -609,7 +571,8 @@ class WidgetService:
             # Interpolate boundaries for Indonesian voices
             interpolated = self._interpolator.interpolate_from_sentences(event.sentence_boundaries)
             # Calculate text offsets
-            enhanced = self._calculate_text_offsets(event.chunk_text, interpolated)
+            from src.domain.processor.text_offset_mapper import calculate_text_offsets
+            enhanced = calculate_text_offsets(event.chunk_text, interpolated)
             self._sync_controller.load_boundaries(event.chunk_index, enhanced)
         
         # Update progress
@@ -625,33 +588,6 @@ class WidgetService:
                 self._save_current_session()
             
             self._schedule_ui_update()
-
-    def _calculate_text_offsets(
-        self,
-        text: str,
-        boundaries: list[tuple[float, float, str]]
-    ) -> list[tuple[float, float, str, int, int]]:
-        """Map word events to character offsets in the text."""
-        enhanced = []
-        current_pos = 0
-        text_lower = text.lower()
-        
-        for offset, duration, word in boundaries:
-            word_clean = word.strip()
-            if not word_clean:
-                continue
-                
-            idx = text.find(word_clean, current_pos)
-            if idx == -1:
-                idx = text_lower.find(word_clean.lower(), current_pos)
-            
-            if idx != -1:
-                enhanced.append((offset, duration, word_clean, idx, len(word_clean)))
-                current_pos = idx + len(word_clean)
-            else:
-                enhanced.append((offset, duration, word_clean, current_pos, len(word_clean)))
-                
-        return enhanced
 
     async def on_text_processed(self, event) -> None:
         """Handle text processing (chunk split)."""

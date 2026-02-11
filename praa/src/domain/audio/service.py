@@ -83,6 +83,16 @@ class AudioService:
         """Check if audio is actively playing (not paused)."""
         return self._player.is_playing and not self._player.is_paused
 
+    @property
+    def current_block(self):
+        """Latest audio block for spectrum analysis."""
+        return self._player.current_block
+
+    @property
+    def samplerate(self) -> int:
+        """Current audio samplerate."""
+        return self._player._samplerate
+
     def stop(self) -> None:
         """Stop the audio consumer thread and clean up."""
         self._running = False
@@ -188,8 +198,6 @@ class AudioService:
             self._player.pause()
             self._publish_event(PlaybackPaused())
 
-        elif event.action == TrayActionType.RESUME:
-            self._player.resume()
         elif event.action == TrayActionType.RESUME:
             self._player.resume()
             self._publish_event(PlaybackResumed(timestamp=time.time()))

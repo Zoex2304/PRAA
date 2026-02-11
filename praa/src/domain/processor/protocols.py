@@ -62,3 +62,21 @@ class ITextChunker(Protocol):
             List of text chunks.
         """
         ...
+
+
+@runtime_checkable
+class IContentFilter(Protocol):
+    """Contract for content filtering implementations."""
+
+    def filter(self, text: str) -> str:
+        """
+        Remove non-speech content (images, media, URLs, HTML).
+
+        Args:
+            text: Input text that may contain non-speech artifacts.
+
+        Returns:
+            Text with non-speech content removed.
+        """
+        ...
+

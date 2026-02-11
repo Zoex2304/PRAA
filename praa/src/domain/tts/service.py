@@ -14,6 +14,7 @@ from pathlib import Path
 
 import edge_tts
 
+from src.domain.processor.text_offset_mapper import calculate_text_offsets
 from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import (
     SynthesisComplete,
@@ -90,18 +91,14 @@ class EdgeTTSService:
             self._last_audio_paths.append(output_path)
 
             # Post-process to add text offsets (only for existing word boundaries)
-            enhanced_boundaries = self._calculate_text_offsets(text, word_boundaries)
+            enhanced_boundaries = calculate_text_offsets(text, word_boundaries)
 
             logger.debug(
                 "Synthesized %d chars → %s (%d word boundaries, %d sentences)",
                 len(text), output_path.name, len(enhanced_boundaries), len(sentence_boundaries)
             )
             return output_path, enhanced_boundaries, sentence_boundaries
-    
 
-
-        except Exception:
-            logger.exception("TTS synthesis failed for chunk: %s...", text[:50])
         except Exception:
             logger.exception("TTS synthesis failed for chunk: %s...", text[:50])
             return None, [], []
@@ -170,38 +167,5 @@ class EdgeTTSService:
                 logger.info("TTS temp directory cleaned up")
         except Exception:
             logger.exception("Failed to clean up TTS temp directory")
-
-    def _calculate_text_offsets(
-        self,
-        text: str,
-        boundaries: list[tuple[float, float, str]]
-    ) -> list[tuple[float, float, str, int, int]]:
-        """
-        Map word events to character offsets in the text.
-        Returns list of (offset, duration, word, text_offset, word_len).
-        """
-        enhanced = []
-        current_pos = 0
-        text_lower = text.lower()
-        
-        for offset, duration, word in boundaries:
-            word_clean = word.strip()
-            if not word_clean:
-                continue
-                
-            # Try exact match first
-            idx = text.find(word_clean, current_pos)
-            if idx == -1:
-                # Try case-insensitive
-                idx = text_lower.find(word_clean.lower(), current_pos)
-            
-            if idx != -1:
-                enhanced.append((offset, duration, word_clean, idx, len(word_clean)))
-                current_pos = idx + len(word_clean)
-            else:
-                # Fallback: keep existing without offset
-                enhanced.append((offset, duration, word_clean, current_pos, len(word_clean)))
-                
-        return enhanced
 
 

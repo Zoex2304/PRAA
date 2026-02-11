@@ -1,7 +1,7 @@
 """
 Processor Domain — Orchestrator Service
 
-Coordinates the cleaner → detector → chunker pipeline.
+Coordinates the filter → cleaner → detector → chunker pipeline.
 Subscribes to TextCaptured events, publishes TextProcessed events.
 """
 
@@ -12,6 +12,7 @@ import logging
 from src.domain.config.models import AppConfig
 from src.domain.processor.cleaner import TextCleaner
 from src.domain.processor.chunker import TextChunker
+from src.domain.processor.content_filter import ContentFilter
 from src.domain.processor.detector import LanguageDetector
 from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import ConfigChanged, DetectedLanguage, TextCaptured, TextProcessed
@@ -23,9 +24,9 @@ class ProcessorService:
     """
     Orchestrates the text processing pipeline.
 
-    Flow: raw text → clean → detect language → chunk → publish TextProcessed
+    Flow: raw text → filter (remove images/media/URLs) → clean (normalize) → detect language → chunk → publish
 
-    Each sub-component (cleaner, detector, chunker) is an independent
+    Each sub-component (filter, cleaner, detector, chunker) is an independent
     class with its own responsibility (SRP). This service only coordinates.
     """
 
@@ -33,12 +34,14 @@ class ProcessorService:
         self,
         config: AppConfig,
         event_bus: EventBus,
+        content_filter: ContentFilter | None = None,
         cleaner: TextCleaner | None = None,
         detector: LanguageDetector | None = None,
         chunker: TextChunker | None = None,
     ) -> None:
         self._config = config
         self._event_bus = event_bus
+        self._filter = content_filter or ContentFilter()
         self._cleaner = cleaner or TextCleaner()
         self._detector = detector or LanguageDetector()
         self._chunker = chunker or TextChunker()
@@ -59,29 +62,37 @@ class ProcessorService:
             "..." if len(raw_text) > 100 else "",
         )
 
-        # Step 1: Clean
-        clean_text = self._cleaner.clean(raw_text)
+        # Step 1: Filter non-speech content (images, URLs, HTML, media)
+        filtered_text = self._filter.filter(raw_text)
+        if not filtered_text or not filtered_text.strip():
+            logger.warning("Text is empty after content filtering, skipping")
+            return
+
+        # Step 2: Clean (normalize whitespace, remove emojis, list markers)
+        clean_text = self._cleaner.clean(filtered_text)
         if not clean_text:
             logger.warning("Text is empty after cleaning, skipping")
             return
 
-        # Step 2: Detect language
+        # Step 3: Detect language
         language = self._detect_language(clean_text)
 
-        # Step 3: Select voice based on language
+        # Step 4: Select voice based on language
         voice_id = self._config.get_voice_for_language(language.value)
 
-        # Step 4: Chunk for TTS
+        # Step 5: Chunk for TTS
         chunks = self._chunker.chunk(clean_text, self._config.max_chunk_length)
         if not chunks:
             logger.warning("No chunks produced, skipping")
             return
 
         logger.info(
-            "Text processed: lang=%s, voice=%s, chunks=%d",
+            "Text processed: lang=%s, voice=%s, chunks=%d (filtered %d → %d chars)",
             language.value,
             voice_id,
             len(chunks),
+            len(raw_text),
+            len(clean_text),
         )
 
         # Publish result
@@ -113,13 +124,8 @@ class ProcessorService:
         Reloads the config reference so subsequent text processing
         uses the latest speed_rate, voice_id, and language_preference.
         """
-        # Re-read the config from the config service's current state
-        # The config object is mutable at the service level, so we need
-        # to accept a fresh reference. For simplicity, we update individual
-        # fields based on what changed.
         if event.key in ("speed_rate", "voice_id", "voice_en",
                          "voice_gender", "language_preference", "max_chunk_length"):
-            # Update our config reference with the new value
             updated_data = self._config.model_dump()
             updated_data[event.key] = event.new_value
             try:
@@ -129,4 +135,3 @@ class ProcessorService:
                 )
             except Exception:
                 logger.exception("Failed to update processor config for %s", event.key)
-

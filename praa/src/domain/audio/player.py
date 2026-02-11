@@ -39,6 +39,7 @@ class SoundDevicePlayer:
         self._current_thread: threading.Thread | None = None
         self._current_position_frames = 0
         self._samplerate = 24000  # Default, updated on play
+        self._current_block: np.ndarray | None = None  # Latest audio block for spectrum
 
     @property
     def position_ms(self) -> float:
@@ -51,6 +52,11 @@ class SoundDevicePlayer:
     def is_playing(self) -> bool:
         """Whether audio is currently playing (including paused state)."""
         return self._playing
+
+    @property
+    def current_block(self) -> np.ndarray | None:
+        """Latest audio block being played (for spectrum analysis)."""
+        return self._current_block
 
     @property
     def is_paused(self) -> bool:
@@ -117,6 +123,7 @@ class SoundDevicePlayer:
                     stream.write(block)
                     position = end_pos
                     self._current_position_frames = position
+                    self._current_block = block  # Expose for spectrum analyzer
 
             finally:
                 stream.stop()
@@ -125,12 +132,14 @@ class SoundDevicePlayer:
             with self._lock:
                 self._playing = False
                 self._paused = False
+                self._current_block = None
 
         except Exception:
             logger.exception("Playback error for %s", audio_path)
             with self._lock:
                 self._playing = False
                 self._paused = False
+                self._current_block = None
 
     def stop(self) -> None:
         """Stop current playback immediately."""

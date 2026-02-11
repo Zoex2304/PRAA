@@ -1,8 +1,11 @@
 """
-Processor Domain — Regex-based Text Cleaner
+Processor Domain — Text Cleaner
 
-Strips URLs, emojis, markdown symbols, and excessive whitespace.
-Pure function class with no side effects — easily testable.
+Normalizes text formatting for TTS synthesis.
+
+SINGLE RESPONSIBILITY: Normalize whitespace, remove emojis,
+clean list markers. Does NOT handle content filtering (URLs,
+images, HTML) — that's ContentFilter's job.
 """
 
 from __future__ import annotations
@@ -15,19 +18,14 @@ logger = logging.getLogger(__name__)
 
 class TextCleaner:
     """
-    Cleans raw text to make it suitable for TTS synthesis.
+    Normalizes raw text formatting for TTS synthesis.
 
-    Removes noise that would sound awkward or confusing when read aloud,
-    while preserving the semantic content of the text.
+    Handles whitespace normalization, emoji removal, and list marker
+    cleanup. Content filtering (URLs, images, HTML, markdown) is
+    handled separately by ContentFilter for clear SRP separation.
     """
 
     # Pre-compiled regex patterns for performance
-    _URL_PATTERN = re.compile(
-        r"https?://[^\s<>\"{}|\\^`\[\]]+", re.IGNORECASE
-    )
-    _EMAIL_PATTERN = re.compile(
-        r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", re.IGNORECASE
-    )
     _EMOJI_PATTERN = re.compile(
         "["
         "\U0001F600-\U0001F64F"  # Emoticons
@@ -42,9 +40,6 @@ class TextCleaner:
         "]+",
         re.UNICODE,
     )
-    _MARKDOWN_PATTERN = re.compile(
-        r"[*_~`#>\[\]!|]+"
-    )
     _MULTIPLE_SPACES = re.compile(r"[ \t]+")
     _MULTIPLE_NEWLINES = re.compile(r"\n{3,}")
     _BULLET_PATTERN = re.compile(r"^\s*[-•·]\s+", re.MULTILINE)
@@ -52,37 +47,27 @@ class TextCleaner:
 
     def clean(self, text: str) -> str:
         """
-        Clean raw text by removing noise unsuitable for TTS.
-
-        Processing order matters — URLs must be removed before
-        markdown stripping to avoid partial URL fragments.
+        Normalize raw text formatting for TTS.
 
         Args:
-            text: Raw input text.
+            text: Input text (already content-filtered or raw).
 
         Returns:
-            Cleaned text, or empty string if nothing remains.
+            Normalized text, or empty string if nothing remains.
         """
         if not text or not text.strip():
             return ""
 
         original_length = len(text)
 
-        # 1. Remove URLs and emails first (they contain special chars)
-        text = self._URL_PATTERN.sub("", text)
-        text = self._EMAIL_PATTERN.sub("", text)
-
-        # 2. Remove emojis
+        # 1. Remove emojis
         text = self._EMOJI_PATTERN.sub("", text)
 
-        # 3. Remove markdown formatting symbols
-        text = self._MARKDOWN_PATTERN.sub("", text)
-
-        # 4. Clean up list markers (but keep the text content)
+        # 2. Clean up list markers (but keep the text content)
         text = self._BULLET_PATTERN.sub("", text)
         text = self._NUMBERED_LIST.sub("", text)
 
-        # 5. Normalize whitespace
+        # 3. Normalize whitespace
         text = self._MULTIPLE_SPACES.sub(" ", text)
         text = self._MULTIPLE_NEWLINES.sub("\n\n", text)
         text = text.strip()
