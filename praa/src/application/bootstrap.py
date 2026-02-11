@@ -92,7 +92,7 @@ class Application:
 
         # Widget service (only in widget mode)
         if config.ui_mode == UIMode.WIDGET:
-            self._widget_service = WidgetService(config, self._event_bus, loop, self._session_service)
+            self._widget_service = WidgetService(config, self._event_bus, loop, self._session_service, self._audio_service)
 
         # Orchestrator — wires all event subscriptions
         self._orchestrator = Orchestrator(

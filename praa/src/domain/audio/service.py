@@ -68,6 +68,21 @@ class AudioService:
         self._consumer_thread.start()
         logger.info("Audio consumer thread started")
 
+    @property
+    def position_ms(self) -> float:
+        """Get current playback position in milliseconds."""
+        return self._player.position_ms
+
+    @property
+    def is_playing(self) -> bool:
+        """Check if audio is currently playing (may be paused)."""
+        return self._player.is_playing
+
+    @property
+    def is_actively_playing(self) -> bool:
+        """Check if audio is actively playing (not paused)."""
+        return self._player.is_playing and not self._player.is_paused
+
     def stop(self) -> None:
         """Stop the audio consumer thread and clean up."""
         self._running = False

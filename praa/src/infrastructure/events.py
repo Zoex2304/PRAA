@@ -100,6 +100,9 @@ class SynthesisComplete:
     chunk_text: str = ""
     word_boundaries: list[tuple[float, float, str, int, int]] = field(default_factory=list)
     # Each tuple: (offset_seconds, duration_seconds, word, text_offset, word_len)
+    
+    sentence_boundaries: list[tuple[float, float, str]] = field(default_factory=list)
+    # Each tuple: (offset_seconds, duration_seconds, sentence_text)
 
 
 # ---------------------------------------------------------------------------

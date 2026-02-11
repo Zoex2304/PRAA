@@ -43,7 +43,7 @@ class EdgeTTSService:
         text: str,
         voice: str,
         rate: float,
-    ) -> tuple[Path | None, list[tuple[float, float, str, int, int]]]:
+    ) -> tuple[Path | None, list[tuple[float, float, str, int, int]], list[tuple[float, float, str]]]:
         """
         Synthesize a single text chunk to a temp audio file.
 
@@ -89,25 +89,22 @@ class EdgeTTSService:
             logger.info("Stream finished. Audio: %s bytes. Words: %d. Sentences: %d", output_path.stat().st_size, len(word_boundaries), len(sentence_boundaries))
             self._last_audio_paths.append(output_path)
 
-            # Fallback: If no word boundaries but sentences exist (e.g. Indonesian voices)
-            if not word_boundaries and sentence_boundaries:
-                logger.info("No WordBoundary events. Interpolating from %d SentenceBoundary events.", len(sentence_boundaries))
-                word_boundaries = self._interpolate_words_from_sentences(sentence_boundaries)
-            
-            # Post-process to add text offsets
+            # Post-process to add text offsets (only for existing word boundaries)
             enhanced_boundaries = self._calculate_text_offsets(text, word_boundaries)
 
             logger.debug(
-                "Synthesized %d chars → %s (%d word boundaries)",
-                len(text), output_path.name, len(enhanced_boundaries),
+                "Synthesized %d chars → %s (%d word boundaries, %d sentences)",
+                len(text), output_path.name, len(enhanced_boundaries), len(sentence_boundaries)
             )
-            return output_path, enhanced_boundaries
+            return output_path, enhanced_boundaries, sentence_boundaries
     
 
 
         except Exception:
             logger.exception("TTS synthesis failed for chunk: %s...", text[:50])
-            return None, []
+        except Exception:
+            logger.exception("TTS synthesis failed for chunk: %s...", text[:50])
+            return None, [], []
 
     async def handle_text_processed(self, event: TextProcessed) -> None:
         """
@@ -130,7 +127,7 @@ class EdgeTTSService:
                 SynthesisStarted(chunk_index=index, total_chunks=total)
             )
 
-            audio_path, word_boundaries = await self.synthesize(
+            audio_path, word_boundaries, sentence_boundaries = await self.synthesize(
                 text=chunk_text,
                 voice=event.voice_id,
                 rate=event.speed_rate,
@@ -144,6 +141,7 @@ class EdgeTTSService:
                         total_chunks=total,
                         chunk_text=chunk_text,
                         word_boundaries=word_boundaries,
+                        sentence_boundaries=sentence_boundaries,
                     )
                 )
             else:
@@ -206,68 +204,4 @@ class EdgeTTSService:
                 
         return enhanced
 
-    def _interpolate_words_from_sentences(
-        self,
-        sentences: list[tuple[float, float, str]]
-    ) -> list[tuple[float, float, str]]:
-        """
-        Generate estimated word boundaries by splitting sentences and distributing duration.
-        Accounts for punctuation pauses to improve sync accuracy.
-        """
-        estimated = []
-        
-        # Heuristic pause durations (ms)
-        PAUSE_COMMA = 250.0 
-        PAUSE_SENTENCE = 500.0
-        
-        for s_offset, s_duration, s_text in sentences:
-            words = s_text.split()
-            if not words:
-                continue
-                
-            # 1. Analyze words for punctuation pauses
-            word_pauses = []
-            total_pause_duration = 0.0
-            total_chars = 0
-            
-            for word in words:
-                pause = 0.0
-                clean_word = word.strip()
-                if clean_word.endswith(",") or clean_word.endswith(";") or clean_word.endswith(":"):
-                    pause = PAUSE_COMMA
-                elif clean_word.endswith(".") or clean_word.endswith("?") or clean_word.endswith("!"):
-                    pause = PAUSE_SENTENCE
-                
-                word_pauses.append(pause)
-                total_pause_duration += pause
-                total_chars += len(clean_word)
-            
-            if total_chars == 0:
-                continue
-                
-            # 2. Calculate active speech duration
-            # Ensure we don't subtract more than available (clamp to 10% of duration minimum)
-            max_pause = s_duration * 0.9
-            actual_pause_total = min(total_pause_duration, max_pause)
-            
-            # Scale pauses if they exceed limit
-            pause_scale = 1.0
-            if total_pause_duration > max_pause:
-                 pause_scale = max_pause / total_pause_duration
-            
-            active_duration = s_duration - actual_pause_total
-            
-            current_offset = s_offset
-            
-            for i, word in enumerate(words):
-                # Proportional duration based on length
-                word_ratio = len(word) / total_chars
-                word_duration = active_duration * word_ratio
-                
-                estimated.append((current_offset, word_duration, word))
-                
-                # Advance offset by word + pause
-                pause = word_pauses[i] * pause_scale
-                current_offset += word_duration + pause
-                
-        return estimated
+

@@ -37,6 +37,15 @@ class SoundDevicePlayer:
         self._playing = False
         self._paused = False
         self._current_thread: threading.Thread | None = None
+        self._current_position_frames = 0
+        self._samplerate = 24000  # Default, updated on play
+
+    @property
+    def position_ms(self) -> float:
+        """Get current playback position in milliseconds."""
+        if self._samplerate <= 0:
+            return 0.0
+        return (self._current_position_frames / self._samplerate) * 1000.0
 
     @property
     def is_playing(self) -> bool:
@@ -59,6 +68,8 @@ class SoundDevicePlayer:
         try:
             # Read audio file
             data, samplerate = sf.read(str(audio_path), dtype="float32")
+            self._samplerate = samplerate
+            self._current_position_frames = 0
 
             with self._lock:
                 self._stop_event.clear()
@@ -105,6 +116,7 @@ class SoundDevicePlayer:
 
                     stream.write(block)
                     position = end_pos
+                    self._current_position_frames = position
 
             finally:
                 stream.stop()

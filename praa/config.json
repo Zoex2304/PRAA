@@ -9,6 +9,7 @@
   "auto_copy": true,
   "language_preference": "auto",
   "max_chunk_length": 2000,
+  "playback_latency_ms": 0,
   "VOICE_ROSTER": {
     "male": {
       "id": "id-ID-ArdiNeural",

@@ -50,6 +50,8 @@ from src.infrastructure.events import (
 from .sync_controller import SyncController, SyncState
 from .transcript_renderer import TranscriptRenderer
 from .playback_state_manager import PlaybackStateManager, PlaybackState
+from .audio_time_provider import CalibratedTimeProvider
+from .word_boundary_interpolator import WordBoundaryInterpolator
 
 logger = logging.getLogger(__name__)
 
@@ -136,11 +138,13 @@ class WidgetService:
         event_bus: EventBus,
         loop: asyncio.AbstractEventLoop,
         session_service: SessionService,
+        audio_service = None,
     ) -> None:
         self._config = config
         self._event_bus = event_bus
         self._loop = loop
         self._session_service = session_service
+        self._audio_service = audio_service
         
         # UI state
         self._root: Optional[ctk.CTk] = None
@@ -183,7 +187,7 @@ class WidgetService:
         self._running = False
         
         if self._sync_controller:
-            self._sync_controller.stop_sync()
+            self._sync_controller.reset()
         if self._spectrum:
             self._spectrum.set_active(False)
             
@@ -217,10 +221,20 @@ class WidgetService:
         
         # INITIALIZE RESPONSIBLE OBJECTS (after UI exists)
         self._state_manager = PlaybackStateManager()
+        
+        # V2 Sync Architecture
+        self._time_provider = CalibratedTimeProvider(
+            get_player_position_ms=lambda: self._audio_service.position_ms if self._audio_service else 0.0,
+            get_player_state=lambda: self._audio_service.is_actively_playing if self._audio_service else False,
+            latency_compensation_ms=self._config.playback_latency_ms,
+        )
+        self._interpolator = WordBoundaryInterpolator()
+        
         self._sync_controller = SyncController(
+            time_provider=self._time_provider,
             highlight_callback=self._on_highlight_word,
         )
-        self._sync_controller.set_latency(self._config.playback_latency_ms)
+        
         self._transcript_renderer = TranscriptRenderer(self._transcript_box)
         self._spectrum = SpectrumAnimator(num_bars=16)
         
@@ -439,12 +453,12 @@ class WidgetService:
         if not self._running or self._root is None:
             return
 
-        if self._sync_controller and self._sync_controller.is_active:
-            should_continue = self._sync_controller.update_sync()
-            
-            if not should_continue:
-                # Chunk completed
-                logger.debug("Sync completed for current chunk")
+        if self._sync_controller and self._time_provider:
+            try:
+                # Always call update_sync - it handles state internally
+                self._sync_controller.update_sync()
+            except Exception:
+                logger.debug("Sync update error", exc_info=True)
 
         try:
             self._root.after(50, self._update_sync)
@@ -552,7 +566,7 @@ class WidgetService:
         
         # Reset all controllers
         if self._sync_controller:
-            self._sync_controller.clear_all()
+            self._sync_controller.reset()
         if self._state_manager:
             self._state_manager.reset()
         
@@ -591,6 +605,12 @@ class WidgetService:
         # Store word boundaries in SyncController
         if event.word_boundaries and self._sync_controller:
             self._sync_controller.load_boundaries(event.chunk_index, event.word_boundaries)
+        elif event.sentence_boundaries and self._sync_controller:
+            # Interpolate boundaries for Indonesian voices
+            interpolated = self._interpolator.interpolate_from_sentences(event.sentence_boundaries)
+            # Calculate text offsets
+            enhanced = self._calculate_text_offsets(event.chunk_text, interpolated)
+            self._sync_controller.load_boundaries(event.chunk_index, enhanced)
         
         # Update progress
         self._update_progress(f"Synthesized {event.chunk_index + 1}/{event.total_chunks}")
@@ -605,6 +625,33 @@ class WidgetService:
                 self._save_current_session()
             
             self._schedule_ui_update()
+
+    def _calculate_text_offsets(
+        self,
+        text: str,
+        boundaries: list[tuple[float, float, str]]
+    ) -> list[tuple[float, float, str, int, int]]:
+        """Map word events to character offsets in the text."""
+        enhanced = []
+        current_pos = 0
+        text_lower = text.lower()
+        
+        for offset, duration, word in boundaries:
+            word_clean = word.strip()
+            if not word_clean:
+                continue
+                
+            idx = text.find(word_clean, current_pos)
+            if idx == -1:
+                idx = text_lower.find(word_clean.lower(), current_pos)
+            
+            if idx != -1:
+                enhanced.append((offset, duration, word_clean, idx, len(word_clean)))
+                current_pos = idx + len(word_clean)
+            else:
+                enhanced.append((offset, duration, word_clean, current_pos, len(word_clean)))
+                
+        return enhanced
 
     async def on_text_processed(self, event) -> None:
         """Handle text processing (chunk split)."""
@@ -626,10 +673,16 @@ class WidgetService:
             self._spectrum.set_active(True)
         
         # Start sync
-        if self._sync_controller:
-            success = self._sync_controller.start_sync(event.chunk_index, event.timestamp)
-            if not success:
-                logger.warning("Sync pending - boundaries not ready for chunk %d", event.chunk_index)
+        # Start sync (V2: just notify time provider)
+        if self._time_provider:
+            self._time_provider.set_chunk(event.chunk_index)
+            self._time_provider.calibrate()
+            
+        # Warn if boundaries missing
+        if self._sync_controller and not self._sync_controller.has_boundaries(event.chunk_index):
+             # Register wait
+             self._sync_controller.wait_for_boundaries(event.chunk_index)
+             logger.warning("Sync waiting - boundaries not ready for chunk %d", event.chunk_index)
         
         self._schedule_ui_update()
         
@@ -638,8 +691,8 @@ class WidgetService:
         logger.info("Playback paused")
         if self._state_manager:
             self._state_manager.pause_playback()
-        if self._sync_controller:
-            self._sync_controller.pause_sync()
+        # SyncController V2 handles pause naturally via TimeProvider
+
         if self._spectrum:
             self._spectrum.set_active(False)
         self._schedule_ui_update()
@@ -649,8 +702,8 @@ class WidgetService:
         logger.info("Playback resumed")
         if self._state_manager:
             self._state_manager.resume_playback()
-        if self._sync_controller:
-            self._sync_controller.resume_sync(event.timestamp)
+        # SyncController V2 handles resume naturally via TimeProvider
+
         if self._spectrum:
             self._spectrum.set_active(True)
         self._schedule_ui_update()
@@ -665,7 +718,12 @@ class WidgetService:
         
         # Stop sync
         if self._sync_controller:
-            self._sync_controller.stop_sync()
+            # Reset highlight
+            self._sync_controller.clear_highlight()
+            # We don't necessarily stop sync controller, but we can reset it if session ends
+            # For stopped playback, just clearing highlight is enough?
+            # Or reset current position?
+            pass
         
         # Update state
         if self._state_manager:
