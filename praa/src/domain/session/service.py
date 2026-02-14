@@ -126,6 +126,25 @@ class SessionService:
             logger.exception("Failed to retrieve last session")
             return None
 
+    def get_recent_sessions(self, limit: int = 5) -> List[Session]:
+        """Get list of recent sessions."""
+        try:
+            rows = self._db.get_recent_sessions(limit)
+            sessions = []
+            for row in rows:
+                sessions.append(Session(
+                    id=row["id"],
+                    timestamp=row["timestamp"],
+                    text_content=row["text_content"],
+                    audio_paths=json.loads(row["audio_paths"]),
+                    word_boundaries=json.loads(row["word_boundaries"]) if row["word_boundaries"] else {},
+                    config_snapshot=json.loads(row["config_snapshot"]) if row["config_snapshot"] else {},
+                ))
+            return sessions
+        except Exception:
+            logger.exception("Failed to retrieve recent sessions")
+            return []
+
     def get_text_slice(self, text: str, start_word_idx: int) -> str:
         """
         Smart Resume Helper: Returns text starting from word index.

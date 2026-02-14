@@ -78,3 +78,14 @@ class DatabaseManager:
         """Commit transaction."""
         if self._connection:
             self._connection.commit()
+
+    def get_recent_sessions(self, limit: int = 5) -> list[sqlite3.Row]:
+        """Get recent sessions ordered by timestamp desc."""
+        if not self._connection:
+            return []
+        
+        cursor = self.execute(
+            "SELECT * FROM sessions ORDER BY timestamp DESC LIMIT ?", 
+            (limit,)
+        )
+        return cursor.fetchall()

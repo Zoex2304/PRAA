@@ -8,3 +8,4 @@ lingua-language-detector>=2.0
 Pillow>=10.0
 customtkinter>=5.2
 rich>=13.0
+psutil>=5.9.0

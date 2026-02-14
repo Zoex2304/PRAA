@@ -48,6 +48,7 @@ class StateInfo:
     can_pause: bool
     can_stop: bool
     can_resume: bool
+    background_processing: bool = False
 
 
 # Status colors
@@ -74,6 +75,7 @@ class PlaybackStateManager:
         self._has_content = False
         self._total_chunks = 0
         self._current_chunk = 0
+        self._is_processing = False
         
     # ----------------------------------------------------------------
     # PUBLIC API: State Transitions
@@ -240,3 +242,182 @@ class PlaybackStateManager:
         if new_state != self._state:
             logger.info("Playback: %s → %s", self._state.name, new_state.name)
             self._state = new_state
+            
+            # Auto-update background processing flag if we leave processing but haven't finished?
+            # actually we handle that via separate flags now.
+            
+    def set_processing(self, is_processing: bool) -> None:
+        """Update background processing status."""
+        self._is_processing = is_processing
+        # If we are IDLE and start processing, we go to PROCESSING
+        if self._state == PlaybackState.IDLE and is_processing:
+            self._transition(PlaybackState.PROCESSING)
+        # If we stop processing and are in PROCESSING state, we go to READY
+        elif self._state == PlaybackState.PROCESSING and not is_processing:
+            self._transition(PlaybackState.READY)
+
+    def start_processing(self, total_chunks: int) -> None:
+        """Start TTS processing."""
+        self._total_chunks = total_chunks
+        self._has_content = True
+        self.set_processing(True)
+    
+    def processing_complete(self) -> None:
+        """TTS processing finished successfully."""
+        self.set_processing(False)
+    
+    def start_playback(self, chunk_idx: int = 0) -> bool:
+        """
+        Start playback.
+        
+        Returns:
+            True if playback started
+            False if not allowed from current state
+        """
+        # Allow start if READY or PAUSED or PROCESSING (if we have content)
+        if self._state not in (PlaybackState.READY, PlaybackState.PAUSED, PlaybackState.PROCESSING):
+            logger.warning("Cannot start playback from state %s", self._state.name)
+            return False
+        
+        if not self._has_content:
+            logger.warning("Cannot start playback: no content loaded")
+            return False
+        
+        self._current_chunk = chunk_idx
+        self._transition(PlaybackState.PLAYING)
+        return True
+    
+    def pause_playback(self) -> bool:
+        """
+        Pause playback.
+        
+        Returns:
+            True if paused
+            False if not allowed from current state
+        """
+        if self._state != PlaybackState.PLAYING:
+            logger.warning("Cannot pause from state %s", self._state.name)
+            return False
+        
+        self._transition(PlaybackState.PAUSED)
+        return True
+    
+    def resume_playback(self) -> bool:
+        """
+        Resume playback from paused state.
+        
+        Returns:
+            True if resumed
+            False if not allowed from current state
+        """
+        if self._state != PlaybackState.PAUSED:
+            logger.warning("Cannot resume from state %s", self._state.name)
+            return False
+        
+        self._transition(PlaybackState.PLAYING)
+        return True
+    
+    def stop_playback(self) -> None:
+        """Stop playback and return to ready (or processing) state."""
+        if self._state not in (PlaybackState.PLAYING, PlaybackState.PAUSED):
+            logger.warning("Cannot stop from state %s", self._state.name)
+            return
+        
+        # Return to PROCESSING if we are still processing, otherwise READY
+        next_state = PlaybackState.PROCESSING if self._is_processing else PlaybackState.READY
+        if not self._has_content:
+            next_state = PlaybackState.IDLE
+            
+        self._transition(next_state)
+    
+    def complete_playback(self) -> None:
+        """Mark playback as completed."""
+        if self._state != PlaybackState.PLAYING:
+            logger.warning("Playback complete called from state %s", self._state.name)
+            return
+        
+        # Return to PROCESSING if still processing, else READY
+        next_state = PlaybackState.PROCESSING if self._is_processing else PlaybackState.READY
+        self._transition(next_state)
+    
+    def error_occurred(self, message: str = "") -> None:
+        """Transition to error state."""
+        logger.error("Playback error: %s (from state %s)", message, self._state.name)
+        self._transition(PlaybackState.ERROR)
+    
+    def reset(self) -> None:
+        """Reset to idle state (new session)."""
+        self._has_content = False
+        self._total_chunks = 0
+        self._current_chunk = 0
+        self._is_processing = False
+        self._transition(PlaybackState.IDLE)
+    
+    # ----------------------------------------------------------------
+    # QUERY API: Thread-Safe State Queries
+    # ----------------------------------------------------------------
+    
+    @property
+    def state(self) -> PlaybackState:
+        """Current playback state."""
+        return self._state
+    
+    @property
+    def is_playing(self) -> bool:
+        """Is audio currently playing?"""
+        return self._state == PlaybackState.PLAYING
+    
+    @property
+    def is_paused(self) -> bool:
+        """Is playback paused?"""
+        return self._state == PlaybackState.PAUSED
+    
+    @property
+    def is_idle(self) -> bool:
+        """Is system idle (no content)?"""
+        return self._state == PlaybackState.IDLE
+    
+    @property
+    def has_content(self) -> bool:
+        """Is content loaded and ready?"""
+        return self._has_content
+
+    @property
+    def is_processing(self) -> bool:
+        """Is synthesis running in background?"""
+        return self._is_processing
+    
+    def get_state_info(self) -> StateInfo:
+        """
+        Get immutable state information for UI.
+        
+        Thread-safe: Returns frozen dataclass.
+        """
+        # Base state info
+        state_map = {
+            PlaybackState.IDLE: ("Idle", STATUS_IDLE, False, False, False, False),
+            PlaybackState.PROCESSING: ("Processing...", STATUS_PROCESSING, False, False, False, False),
+            PlaybackState.READY: ("Ready", ACCENT, True, False, False, False),
+            PlaybackState.PLAYING: ("Playing", STATUS_PLAYING, False, True, True, False),
+            PlaybackState.PAUSED: ("Paused", STATUS_PROCESSING, False, False, True, True),
+            PlaybackState.ERROR: ("Error", STATUS_ERROR, False, False, False, False),
+        }
+        
+        text, color, play, pause, stop, resume = state_map[self._state]
+        
+        # Dynamic overrides based on background processing
+        if self._state == PlaybackState.PLAYING and self._is_processing:
+            text = "Playing (Processing...)"
+        elif self._state == PlaybackState.PAUSED and self._is_processing:
+            text = "Paused (Processing...)"
+        
+        return StateInfo(
+            state=self._state,
+            status_text=text,
+            status_color=color,
+            can_play=play,
+            can_pause=pause,
+            can_stop=stop,
+            can_resume=resume,
+            background_processing=self._is_processing
+        )

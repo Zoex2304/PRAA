@@ -26,12 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class EdgeTTSService:
-    """
-    Text-to-speech synthesis using Microsoft Neural voices via edge-tts.
-
-    Uses streaming API to capture word boundary events for precise
-    transcript synchronization during playback.
-    """
+   
 
     def __init__(self, event_bus: EventBus) -> None:
         self._event_bus = event_bus

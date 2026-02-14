@@ -40,6 +40,7 @@ class SoundDevicePlayer:
         self._current_position_frames = 0
         self._samplerate = 24000  # Default, updated on play
         self._current_block: np.ndarray | None = None  # Latest audio block for spectrum
+        self._duration_ms = 0.0
 
     @property
     def position_ms(self) -> float:
@@ -63,6 +64,11 @@ class SoundDevicePlayer:
         """Whether audio is currently paused."""
         return self._paused
 
+    @property
+    def duration_ms(self) -> float:
+        """Total duration of current track in milliseconds."""
+        return self._duration_ms
+
     def play(self, audio_path: Path, on_start: Optional[Callable[[], None]] = None) -> None:
         """
         Play an audio file. Blocks until playback completes or is stopped.
@@ -76,6 +82,12 @@ class SoundDevicePlayer:
             data, samplerate = sf.read(str(audio_path), dtype="float32")
             self._samplerate = samplerate
             self._current_position_frames = 0
+            
+            # Calculate duration
+            if samplerate > 0:
+                self._duration_ms = (len(data) / samplerate) * 1000.0
+            else:
+                self._duration_ms = 0.0
 
             with self._lock:
                 self._stop_event.clear()

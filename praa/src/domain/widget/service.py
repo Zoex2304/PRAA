@@ -66,11 +66,14 @@ TEXT_PRIMARY = "#e2e8f0"
 TEXT_DIM = "#94a3b8"
 SPECTRUM_COLORS = ["#0f9d9a", "#14cfc9", "#00e5ff", "#0ea5e9", "#06b6d4"]
 
-WIDGET_WIDTH = 400
+WIDGET_WIDTH = 450
 COMPACT_HEIGHT = 60
 EXPANDED_HEIGHT = 560
 
 
+import psutil
+from .components.chunk_progress import ChunkProgressMap
+from .components.debug_panel import DebugPanel
 from src.domain.widget.spectrum_analyzer import SpectrumAnalyzer
 
 
@@ -99,22 +102,29 @@ class WidgetService:
         self._session_service = session_service
         self._audio_service = audio_service
         
-        # UI state
+        # UI thread management
         self._root: Optional[ctk.CTk] = None
         self._thread: Optional[threading.Thread] = None
-        self._expanded = False
-        self._running = False
         
         # COMPOSITION: Inject responsible objects later (after UI init)
         self._state_manager: Optional[PlaybackStateManager] = None
         self._sync_controller: Optional[SyncController] = None
         self._transcript_renderer: Optional[TranscriptRenderer] = None
         self._spectrum: Optional[SpectrumAnalyzer] = None
+        self._chunk_progress: Optional[ChunkProgressMap] = None
+        self._debug_panel: Optional[DebugPanel] = None
         
         # Session data
         self._transcript_text: Optional[str] = None
         self._audio_paths: list[Path] = []
         self._total_chunks = 0
+        self._processed_chunks = 0  # Track completed chunks
+        
+        # UI State
+        self._expanded = False
+        self._running = False
+        self._debug_visible = False
+        self._history_panel_visible = False
         
         # Drag state
         self._drag_x = 0
@@ -143,6 +153,8 @@ class WidgetService:
             self._sync_controller.reset()
         if self._spectrum:
             self._spectrum.set_active(False)
+        if self._chunk_progress:
+            self._chunk_progress.reset()
             
         if self._root is not None:
             try:
@@ -256,6 +268,15 @@ class WidgetService:
         )
         self._expand_btn.grid(row=0, column=4, padx=1, pady=8)
 
+        # Minimize button
+        self._minimize_btn = ctk.CTkButton(
+            self._compact_frame, text="─", width=28, height=28,
+            font=ctk.CTkFont(size=14, weight="bold"), fg_color="transparent",
+            hover_color=BG_PANEL, text_color=TEXT_DIM,
+            command=self.hide,
+        )
+        self._minimize_btn.grid(row=0, column=5, padx=1, pady=8)
+
         # Close button
         self._close_btn = ctk.CTkButton(
             self._compact_frame, text="✕", width=28, height=28,
@@ -263,7 +284,7 @@ class WidgetService:
             hover_color="#ef4444", text_color=TEXT_DIM,
             command=self._on_close,
         )
-        self._close_btn.grid(row=0, column=5, padx=(1, 8), pady=8)
+        self._close_btn.grid(row=0, column=6, padx=(1, 8), pady=8)
 
     def _build_expanded_panel(self) -> None:
         """Build expanded control panel."""
@@ -327,11 +348,34 @@ class WidgetService:
         )
         self._save_btn.pack(side="left", padx=2, pady=4)
         
-        self._silent_btn = ctk.CTkButton(
-            self._controls_frame, text="🔇",
-            command=self._on_toggle_mode, **btn_style
+        # Spacer
+        ctk.CTkFrame(self._controls_frame, width=1, height=16, fg_color="#334155").pack(side="left", padx=6, pady=8)
+        
+        # Debug / History Toggles
+        self._history_btn = ctk.CTkButton(
+            self._controls_frame, text="📜", 
+            command=self._toggle_history, **btn_style
         )
-        self._silent_btn.pack(side="left", padx=2, pady=4)
+        self._history_btn.pack(side="left", padx=2, pady=4)
+        
+        self._debug_btn = ctk.CTkButton(
+            self._controls_frame, text="🐞", 
+            command=self._toggle_debug, **btn_style
+        )
+        self._debug_btn.pack(side="left", padx=2, pady=4)
+        
+        # Chunk Progress Map
+        # Initialize here so it exists for setup
+        self._chunk_progress = ChunkProgressMap(self._expanded_frame)
+        self._chunk_progress.pack(fill="x", padx=12, pady=(2, 4))
+        
+        # Debug / History Panel Container
+        self._extra_panel_frame = ctk.CTkFrame(self._expanded_frame, fg_color="transparent")
+        self._extra_panel_frame.pack(fill="x", padx=8, pady=0)
+        
+        # Debug Panel (packed mostly fill)
+        self._debug_panel = DebugPanel(self._extra_panel_frame)
+        self._debug_panel.pack(fill="both", expand=True)
 
         # Spectrum visualizer
         self._spectrum_frame = ctk.CTkFrame(
@@ -368,6 +412,14 @@ class WidgetService:
             command=self._on_copy_transcript,
         )
         self._copy_btn.pack(side="right", padx=4)
+
+        # Timestamp label (moved to transcript header)
+        self._time_label = ctk.CTkLabel(
+            self._transcript_header, text="00:00/00:00",
+            font=ctk.CTkFont(family="Consolas", size=12),
+            text_color=ACCENT_LIGHT,
+        )
+        self._time_label.pack(side="right", padx=8)
 
         # Transcript textbox (managed by TranscriptRenderer)
         self._transcript_box = ctk.CTkTextbox(
@@ -419,6 +471,33 @@ class WidgetService:
             try:
                 # Always call update_sync - it handles state internally
                 self._sync_controller.update_sync()
+                
+                # Update timestamp
+                if self._audio_service and hasattr(self, '_time_label'):
+                    pos = self._audio_service.current_position_global_ms / 1000
+                    dur = self._audio_service.total_duration_ms / 1000
+                    
+                    has_hours = dur >= 3600
+                    
+                    def fmt(s, force_hours=False):
+                        h = int(s // 3600)
+                        m = int((s % 3600) // 60)
+                        s = int(s % 60)
+                        if force_hours or h > 0:
+                            return f"{h:02}:{m:02}:{s:02}"
+                        return f"{m:02}:{s:02}"
+                    
+                    self._time_label.configure(text=f"{fmt(pos, has_hours)}/{fmt(dur, has_hours)}")
+                    
+                # Update Debug Panel
+                if self._debug_visible and self._debug_panel and self._audio_service:
+                    self._debug_panel.update_metrics(
+                        state_text=self._state_manager.get_state_info().status_text if self._state_manager else "Unknown",
+                        queue_size=self._audio_service._queue.size, # Accessing private queue for debug
+                        is_playing=self._audio_service.is_playing,
+                        position_ms=self._audio_service.position_ms
+                    )
+                    
             except Exception:
                 logger.debug("Sync update error", exc_info=True)
 
@@ -477,6 +556,10 @@ class WidgetService:
         
         # Clear everything first
         self._controls_frame.pack_forget()
+        if hasattr(self, '_chunk_progress'):
+            self._chunk_progress.pack_forget()
+        if hasattr(self, '_extra_panel_frame'):
+            self._extra_panel_frame.pack_forget()
         if hasattr(self, '_spectrum_frame'):
             self._spectrum_frame.pack_forget()
         self._progress_label.pack_forget()
@@ -493,8 +576,18 @@ class WidgetService:
         # Repack if content exists
         if has_content:
             self._controls_frame.pack(fill="x", padx=8, pady=(4, 2))
+            
+            if hasattr(self, '_chunk_progress'):
+                self._chunk_progress.pack(fill="x", padx=12, pady=(2, 4))
+                
+            if hasattr(self, '_extra_panel_frame'):
+                # Only pack if visible (managed by toggles)
+                if self._debug_visible or self._history_panel_visible:
+                    self._extra_panel_frame.pack(fill="x", padx=8)
+            
             if hasattr(self, '_spectrum_frame'):
                 self._spectrum_frame.pack(fill="x", padx=8, pady=2)
+                
             self._progress_label.pack(fill="x", padx=12, pady=(2, 0))
             self._transcript_header.pack(fill="x", padx=8, pady=(2, 0))
             self._transcript_box.pack(fill="both", expand=True, padx=8, pady=(2, 8))
@@ -547,9 +640,105 @@ class WidgetService:
         if not self._expanded and self._root:
             self._root.after(0, self._toggle_expand)
 
+    def _toggle_debug(self) -> None:
+        """Toggle debug panel visibility."""
+        self._debug_visible = not self._debug_visible
+        self._refresh_content_visibility()
+                
+    def _toggle_history(self) -> None:
+        """Toggle history panel."""
+        # Simple implementation using a popup or replacing text
+        # For now, let's load history into text box or show a menu
+        self._show_history_menu()
+        
+    def _show_history_menu(self) -> None:
+        """Show history as a popup window."""
+        sessions = self._session_service.get_recent_sessions()
+        if not sessions:
+            logger.info("No history found")
+            return
+            
+        # Create popup
+        popup = ctk.CTkToplevel(self._root)
+        popup.title("History")
+        popup.geometry("400x300")
+        popup.attributes("-topmost", True)
+        
+        # Header
+        ctk.CTkLabel(
+            popup, text="Recent Sessions", 
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(pady=10)
+        
+        # Scrollable list
+        scroll = ctk.CTkScrollableFrame(popup)
+        scroll.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        
+        for sess in sessions:
+            # Create a card for each session
+            card = ctk.CTkFrame(scroll, fg_color="#1e293b")
+            card.pack(fill="x", pady=2)
+            
+            # Timestamp
+            ts = sess.timestamp.replace("T", " ")
+            ctk.CTkLabel(
+                card, text=ts, 
+                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=ACCENT
+            ).pack(anchor="w", padx=8, pady=(4, 0))
+            
+            # Text preview
+            preview = sess.text_content[:50].replace("\n", " ") + "..."
+            ctk.CTkLabel(
+                card, text=preview,
+                font=ctk.CTkFont(size=11),
+                text_color="#cbd5e1",
+                anchor="w"
+            ).pack(anchor="w", padx=8, pady=(0, 4))
+            
+            # Load Button
+            def load_session(s=sess, p=popup):
+                self._load_session_from_history(s)
+                p.destroy()
+                
+            ctk.CTkButton(
+                card, text="Load", width=60, height=20,
+                font=ctk.CTkFont(size=10),
+                fg_color="#334155", hover_color=ACCENT,
+                command=load_session
+            ).pack(anchor="e", padx=8, pady=(0, 4))
+
+    def _load_session_from_history(self, session) -> None:
+        """Load a session from history."""
+        logger.info("Loading session: %d", session.id)
+        
+        # 1. Load text
+        self._transcript_text = session.text_content
+        self._publish_event(TextCaptured(raw_text=session.text_content))
+        
+        # 2. Note: We trigger TextCaptured which starts fresh synthesis.
+        # If we wanted to preserve audio, we'd need to bypass synthesis 
+        # but that is complex because we need to match config.
+        # For refined UX, re-synthesizing is safer to ensure config matches current settings
+        # UNLESS we also load config?
+        # The user request said "recall previous payloads".
+        # If we just reload text, that's "recall". 
+        # Re-using audio files is an optimization.
+        # Given "latency" complaint, maybe re-using audio is better?
+        # But `AudioService` queue needs paths.
+        # Let's just reload text for now - it guarantees consistency.
+        pass
+
     async def on_synthesis_started(self, event: SynthesisStarted) -> None:
         """Handle synthesis start."""
         self._total_chunks = event.total_chunks
+        
+        # Initialize Chunk Mapper if first chunk
+        if event.chunk_index == 0 and self._chunk_progress:
+            self._chunk_progress.setup(event.total_chunks)
+            
+        if self._chunk_progress:
+            self._chunk_progress.update_status(event.chunk_index, "processing")
         
         if self._state_manager and self._state_manager.state == PlaybackState.IDLE:
             self._state_manager.start_processing(event.total_chunks)
@@ -578,6 +767,9 @@ class WidgetService:
         # Update progress
         self._update_progress(f"Synthesized {event.chunk_index + 1}/{event.total_chunks}")
         
+        if self._chunk_progress:
+            self._chunk_progress.update_status(event.chunk_index, "ready")
+        
         # If all chunks done, transition to READY
         if len(self._audio_paths) == event.total_chunks:
             if self._state_manager:
@@ -603,6 +795,9 @@ class WidgetService:
         # Update state manager
         if self._state_manager:
             self._state_manager.start_playback(event.chunk_index)
+            
+        if self._chunk_progress:
+            self._chunk_progress.update_status(event.chunk_index, "playing")
         
         # Start spectrum
         if self._spectrum:
