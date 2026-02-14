@@ -619,11 +619,19 @@ class WidgetService:
         """Handle text capture event."""
         logger.info("Text captured: %d chars", len(event.raw_text))
         
-        # Reset all controllers
         if self._sync_controller:
             self._sync_controller.reset()
         if self._state_manager:
             self._state_manager.reset()
+            
+        # FORCE STOP AUDIO to clear pause state and queue
+        if self._audio_service:
+            self._audio_service.stop()
+            # We must restart the start_consumer thread if stop() killed it?
+            # AudioService.stop() sets running=False and joins thread.
+            # We need to restart it.
+            if not self._audio_service._running:
+                 self._audio_service.start()
         
         # Store text
         self._transcript_text = event.raw_text
@@ -1051,6 +1059,15 @@ class WidgetService:
         if not self._transcript_text:
             return
             
+        # Prevent duplicates (Debounce)
+        current_time = time.time()
+        if hasattr(self, '_last_save_time'):
+            time_diff = current_time - self._last_save_time
+            # Check if text is same and it's been less than 5 seconds
+            if time_diff < 5.0 and self._transcript_text == getattr(self, '_last_save_text', ""):
+                logger.info("Skipping duplicate session save (diff=%.2fs)", time_diff)
+                return
+
         try:
             # Get boundaries from sync controller
             boundaries = {}
@@ -1063,10 +1080,14 @@ class WidgetService:
             
             self._session_service.save_session(
                 text=self._transcript_text,
-                audio_paths=self._audio_paths,
+                audio_paths=list(self._audio_paths),
                 word_boundaries=boundaries,
                 config=self._config.model_dump(),
             )
+            
+            self._last_save_time = current_time
+            self._last_save_text = self._transcript_text
+            
             logger.info("Session saved to history")
         except Exception:
             logger.exception("Failed to save session")
