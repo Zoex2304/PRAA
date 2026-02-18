@@ -106,11 +106,9 @@ class UIBuilder:
         root = widget._root
         config = widget._config
 
-        # Scrollable container for all expanded content
-        expanded = ctk.CTkScrollableFrame(
+        # Container for all expanded content
+        expanded = ctk.CTkFrame(
             root, fg_color=BG_DARK, corner_radius=0,
-            scrollbar_button_color=BORDER_SUBTLE,
-            scrollbar_button_hover_color=TEXT_MUTED,
         )
         expanded.grid(row=1, column=0, sticky="nsew")
         root.grid_rowconfigure(1, weight=1)
@@ -188,10 +186,15 @@ class UIBuilder:
         widget._speed_var = ctk.StringVar(value=f"{config.speed_rate:.1f}x")
 
 
+
         # ==============================================================
         # Extra panels (debug / history) — hidden by default
         # ==============================================================
         widget._extra_panel_frame = ctk.CTkFrame(expanded, fg_color="transparent")
+
+        from .components.debug_panel import DebugPanel
+        widget._debug_panel = DebugPanel(widget._extra_panel_frame)
+        widget._debug_panel.pack(fill="both", expand=True)
 
         # ==============================================================
         # Spectrum analyzer

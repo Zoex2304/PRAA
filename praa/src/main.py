@@ -1,16 +1,9 @@
-"""
-PRAA — Personal Read Aloud Assistant
-
-Entry point. Minimal — just determines the base directory
-and delegates everything to the Application bootstrap.
-"""
 
 import sys
 from pathlib import Path
 
 
 def main() -> None:
-    """Launch PRAA."""
     # Determine base directory (where config.json and assets/ live)
     # When running from source: d:\tts-edge\praa\src\main.py → base = d:\tts-edge\praa
     # When running from exe: the exe's directory

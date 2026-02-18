@@ -66,11 +66,6 @@ class AudioService:
         self._chunk_durations: dict[int, float] = {}  # index -> ms
         self._total_chunks: int = 0
 
-    @property
-    def current_chunk_index(self) -> int:
-        """Get the index of the currently playing chunk."""
-        return self._current_chunk_idx
-
     def start(self) -> None:
         """Start the audio consumer thread."""
         if self._consumer_thread is not None:
@@ -164,6 +159,11 @@ class AudioService:
     def queue_size(self) -> int:
         """Current number of items in the playback queue."""
         return self._queue.size
+
+    @property
+    def queue_snapshot(self) -> list[str]:
+        """Get a list of filenames currently in the queue."""
+        return self._queue.get_snapshot()
 
     @property
     def current_block(self):

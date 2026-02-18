@@ -12,7 +12,7 @@ import customtkinter as ctk
 
 from src.domain.config.models import AppConfig
 from src.infrastructure.event_bus import EventBus
-from src.domain.session.service import SessionService
+from src.domain.session.session_service import SessionService
 from src.infrastructure.events import (
     HotkeyPressed,
     PlaybackPaused,
@@ -25,11 +25,8 @@ from src.infrastructure.events import (
 )
 from src.infrastructure.gui_logger import TkinterLogHandler
 
-from .theme import (
-    BG_DARK, SPECTRUM_COLORS,
-    WIDGET_WIDTH, COMPACT_HEIGHT, EXPANDED_HEIGHT,
-)
-from .builder import UIBuilder
+
+from .ui_factory import UIFactory
 from .handlers import WidgetEventHandler
 from .actions import WidgetActions
 from .history import HistoryManager
@@ -70,6 +67,7 @@ class WidgetService:
         self._sync_controller: Optional[SyncController] = None
         self._transcript_renderer: Optional[TranscriptRenderer] = None
         self._spectrum: Optional[SpectrumAnalyzer] = None
+        self._spectrum: Optional[SpectrumAnalyzer] = None
         self._debug_panel = None
         self._time_provider = None
         self._interpolator = None
@@ -78,7 +76,6 @@ class WidgetService:
         self._audio_paths: list[Path] = []
         self._total_chunks = 0
         self._processed_chunks = 0
-        self._text_chunks: list[str] = []
 
         self._expanded = False
         self._running = False
@@ -108,6 +105,7 @@ class WidgetService:
             self._sync_controller.reset()
         if self._spectrum:
             self._spectrum.set_active(False)
+
         if self._root is not None:
             try:
                 self._root.after(0, self._root.destroy)
@@ -120,18 +118,22 @@ class WidgetService:
     def _run_ui(self) -> None:
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("dark-blue")
+        
+        theme = self._config.theme
+        colors = theme.colors
+        dims = theme.dimensions
 
         self._root = ctk.CTk()
         self._root.title("PRAA")
-        self._root.geometry(f"{WIDGET_WIDTH}x{COMPACT_HEIGHT}+50+50")
+        self._root.geometry(f"{dims.widget_width}x{dims.compact_height}+50+50")
         self._root.overrideredirect(True)
         self._root.attributes("-topmost", True)
         self._root.attributes("-alpha", 0.95)
-        self._root.configure(fg_color=BG_DARK)
+        self._root.configure(fg_color=colors.bg_dark)
         self._root.grid_columnconfigure(0, weight=1)
 
-        UIBuilder.build_compact_bar(self)
-        UIBuilder.build_expanded_panel(self)
+        UIFactory.build_compact_bar(self)
+        UIFactory.build_expanded_panel(self)
         self._expanded_frame.grid_remove()
 
         self._state_manager = PlaybackStateManager()
@@ -165,7 +167,7 @@ class WidgetService:
                 samplerate = self._audio_service.samplerate
             self._spectrum.update(block=block, samplerate=samplerate)
             if self._expanded and hasattr(self, '_large_spectrum'):
-                self._spectrum.draw(self._large_spectrum, WIDGET_WIDTH - 24, 50, SPECTRUM_COLORS)
+                self._spectrum.draw(self._large_spectrum, self._config.theme.dimensions.widget_width - 24, 50, self._config.theme.colors.spectrum)
         try:
             self._root.after(50, self._animate_spectrum)
         except Exception:
@@ -198,8 +200,7 @@ class WidgetService:
                         queue_size=self._audio_service.queue_size,
                         is_playing=self._audio_service.is_playing,
                         position_ms=self._audio_service.position_ms,
-                        current_chunk_idx=self._audio_service.current_chunk_index,
-                        chunk_duration_ms=self._audio_service.duration_ms,
+                        queue_snapshot=self._audio_service.queue_snapshot,
                     )
                     self._log_handler.poll(self._debug_panel.get_log_widget())
             except Exception:
@@ -263,12 +264,11 @@ class WidgetService:
 
         if has_content:
             self._controls_frame.pack(fill="x", padx=6, pady=(4, 2))
-            
             if self._debug_visible:
                 # Show Debug Panel
                 if not self._debug_panel:
                     from .components.debug_panel import DebugPanel
-                    self._debug_panel = DebugPanel(self._extra_panel_frame, initial_chunks=self._text_chunks)
+                    self._debug_panel = DebugPanel(self._extra_panel_frame, self._config.theme)
                 
                 self._extra_panel_frame.pack(fill="x", padx=6)
                 self._debug_panel.pack(fill="both", expand=True)
@@ -293,7 +293,6 @@ class WidgetService:
                     self._debug_panel.pack_forget()
             else:
                 self._extra_panel_frame.pack_forget()
-
             if hasattr(self, '_spectrum_frame'):
                 self._spectrum_frame.pack(fill="x", padx=6, pady=2)
             self._progress_label.pack(fill="x", padx=12, pady=(2, 0))
@@ -462,6 +461,16 @@ class WidgetService:
     def _start_drag(self, event) -> None:
         self._drag_x = event.x
         self._drag_y = event.y
+
+        # Close settings popup if open
+        if hasattr(self, '_settings_popup') and self._settings_popup is not None:
+            try:
+                self._settings_popup.destroy()
+            except Exception:
+                pass
+            self._settings_popup = None
+
+
 
     def _do_drag(self, event) -> None:
         if self._root:

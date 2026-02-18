@@ -61,11 +61,10 @@ class WidgetEventHandler:
     async def on_synthesis_started(widget: WidgetService, event) -> None:
         widget._total_chunks = event.total_chunks
 
-        if event.chunk_index == 0 and widget._chunk_progress:
-            widget._chunk_progress.setup(event.total_chunks)
-
-        if widget._chunk_progress:
-            widget._chunk_progress.update_status(event.chunk_index, "processing")
+        if widget._debug_panel:
+            if event.chunk_index == 0:
+                pass # Reset handled by on_text_processed
+            widget._debug_panel.update_chunk_status(event.chunk_index, "processing")
 
         if widget._state_manager and widget._state_manager.state == PlaybackState.IDLE:
             widget._state_manager.start_processing(event.total_chunks)
@@ -89,8 +88,8 @@ class WidgetEventHandler:
 
         widget._update_progress(f"Synthesized {event.chunk_index + 1}/{event.total_chunks}")
 
-        if widget._chunk_progress:
-            widget._chunk_progress.update_status(event.chunk_index, "ready")
+        if widget._debug_panel:
+            widget._debug_panel.update_chunk_status(event.chunk_index, "ready")
 
         if len(widget._audio_paths) == event.total_chunks:
             if widget._state_manager:
@@ -103,6 +102,15 @@ class WidgetEventHandler:
     async def on_text_processed(widget: WidgetService, event) -> None:
         if widget._transcript_renderer and widget._root:
             widget._root.after(0, widget._transcript_renderer.set_content, list(event.chunks))
+            
+        widget._text_chunks = list(event.chunks)
+            
+        # Populate debug panel queue with chunk names
+        if widget._debug_panel:
+            widget._debug_panel.reset_chunks()
+            for i, chunk in enumerate(event.chunks):
+                name = chunk.strip().replace("\n", " ")[:30] + ("..." if len(chunk) > 30 else "")
+                widget._debug_panel.update_chunk_status(i, "pending", name)
 
     @staticmethod
     async def on_playback_started(widget: WidgetService, event: PlaybackStarted) -> None:
@@ -111,8 +119,12 @@ class WidgetEventHandler:
         if widget._state_manager:
             widget._state_manager.start_playback(event.chunk_index)
 
-        if widget._chunk_progress:
-            widget._chunk_progress.update_status(event.chunk_index, "playing")
+        if widget._debug_panel:
+            # Mark previous as done
+            if event.chunk_index > 0:
+                widget._debug_panel.update_chunk_status(event.chunk_index - 1, "done")
+            widget._debug_panel.update_chunk_status(event.chunk_index, "playing")
+
 
         if widget._spectrum:
             widget._spectrum.set_active(True)

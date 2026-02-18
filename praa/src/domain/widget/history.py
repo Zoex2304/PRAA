@@ -17,68 +17,110 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class HistoryPanel(ctk.CTkFrame):
+    """Inline history list."""
+    def __init__(self, master, widget: WidgetService, **kwargs):
+        super().__init__(master, fg_color="transparent", **kwargs)
+        self._widget = widget
+        
+        # Header
+        header = ctk.CTkFrame(self, fg_color="transparent", height=30)
+        header.pack(fill="x", padx=4, pady=4)
+        
+        ctk.CTkLabel(
+            header, text="Recent Sessions",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#94a3b8"
+        ).pack(side="left", padx=4)
+        
+        # Refresh button
+        ctk.CTkButton(
+            header, text="↻", width=24, height=24,
+            font=ctk.CTkFont(size=12),
+            fg_color="transparent", hover_color="#1e293b",
+            text_color="#94a3b8",
+            command=self.refresh
+        ).pack(side="right", padx=4)
+
+        # Scrollable list
+        self._scroll = ctk.CTkScrollableFrame(
+            self, fg_color="#0f172a", corner_radius=4,
+            height=200 # Fixed height constraint for inline
+        )
+        self._scroll.pack(fill="both", expand=True, padx=4, pady=(0, 4))
+        
+        self.refresh()
+
+    def refresh(self):
+        # Clear existing
+        for w in self._scroll.winfo_children():
+            w.destroy()
+            
+        sessions = self._widget._session_service.get_recent_sessions()
+        if not sessions:
+            ctk.CTkLabel(
+                self._scroll, text="No history found",
+                text_color="#64748b", font=ctk.CTkFont(size=11)
+            ).pack(pady=20)
+            return
+
+        for sess in sessions:
+            card = ctk.CTkFrame(self._scroll, fg_color="#1e293b")
+            card.pack(fill="x", pady=2)
+
+            # Timestamp parsing fallback
+            try:
+                ts = sess.timestamp.replace("T", " ")[:16] # YYYY-MM-DD HH:mm
+            except Exception:
+                ts = str(sess.timestamp)
+
+            # Top row: Date + Load button
+            top = ctk.CTkFrame(card, fg_color="transparent")
+            top.pack(fill="x", padx=6, pady=(4, 0))
+            
+            ctk.CTkLabel(
+                top, text=ts,
+                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=ACCENT
+            ).pack(side="left")
+
+            ctk.CTkButton(
+                top, text="Load", width=40, height=18,
+                font=ctk.CTkFont(size=9),
+                fg_color="#334155", hover_color=ACCENT,
+                command=lambda s=sess: self._load(s)
+            ).pack(side="right")
+
+            # Preview text
+            preview = sess.text_content[:60].replace("\n", " ") + "..."
+            ctk.CTkLabel(
+                card, text=preview,
+                font=ctk.CTkFont(size=10),
+                text_color="#cbd5e1",
+                anchor="w", justify="left"
+            ).pack(fill="x", padx=6, pady=(2, 6))
+
+    def _load(self, session):
+        logger.info("Loading session: %s", session.id)
+        # Restore text
+        self._widget._transcript_text = session.text_content
+        self._widget._publish_event(TextCaptured(raw_text=session.text_content))
+        # Hide history panel after loading (optional, but good UX)
+        if hasattr(self._widget, '_toggle_history'):
+            self._widget._toggle_history()
+
+
 class HistoryManager:
-    """Session history display and persistence."""
+    """Session history persistence."""
+
+    # We no longer use toggle_history here to control UI directly.
+    # The WidgetService controls the UI state via HistoryPanel.
+    # This class now mostly handles saving logic.
 
     @staticmethod
     def toggle_history(widget: WidgetService) -> None:
-        HistoryManager.show_history_menu(widget)
-
-    @staticmethod
-    def show_history_menu(widget: WidgetService) -> None:
-        sessions = widget._session_service.get_recent_sessions()
-        if not sessions:
-            logger.info("No history found")
-            return
-
-        popup = ctk.CTkToplevel(widget._root)
-        popup.title("History")
-        popup.geometry("400x300")
-        popup.attributes("-topmost", True)
-
-        ctk.CTkLabel(
-            popup, text="Recent Sessions",
-            font=ctk.CTkFont(size=14, weight="bold")
-        ).pack(pady=10)
-
-        scroll = ctk.CTkScrollableFrame(popup)
-        scroll.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-
-        for sess in sessions:
-            card = ctk.CTkFrame(scroll, fg_color="#1e293b")
-            card.pack(fill="x", pady=2)
-
-            ts = sess.timestamp.replace("T", " ")
-            ctk.CTkLabel(
-                card, text=ts,
-                font=ctk.CTkFont(size=10, weight="bold"),
-                text_color=ACCENT
-            ).pack(anchor="w", padx=8, pady=(4, 0))
-
-            preview = sess.text_content[:50].replace("\n", " ") + "..."
-            ctk.CTkLabel(
-                card, text=preview,
-                font=ctk.CTkFont(size=11),
-                text_color="#cbd5e1",
-                anchor="w"
-            ).pack(anchor="w", padx=8, pady=(0, 4))
-
-            def load_session(s=sess, p=popup):
-                HistoryManager._load_session_from_history(widget, s)
-                p.destroy()
-
-            ctk.CTkButton(
-                card, text="Load", width=60, height=20,
-                font=ctk.CTkFont(size=10),
-                fg_color="#334155", hover_color=ACCENT,
-                command=load_session
-            ).pack(anchor="e", padx=8, pady=(0, 4))
-
-    @staticmethod
-    def _load_session_from_history(widget: WidgetService, session) -> None:
-        logger.info("Loading session: %d", session.id)
-        widget._transcript_text = session.text_content
-        widget._publish_event(TextCaptured(raw_text=session.text_content))
+        # Legacy/helper if needed, but WidgetService should handle it
+        pass
 
     @staticmethod
     def save_current_session(widget: WidgetService) -> None:
