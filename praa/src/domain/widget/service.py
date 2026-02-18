@@ -40,11 +40,10 @@ from src.infrastructure.events import (
     PlaybackResumed,
     PlaybackStopped,
     SynthesisComplete,
-    SynthesisStarted,
-    TextCaptured,
     TrayAction,
     TrayActionType,
 )
+from src.infrastructure.gui_logger import TkinterLogHandler
 
 # Import our new responsible objects
 from .sync_controller import SyncController, SyncState
@@ -101,6 +100,10 @@ class WidgetService:
         self._loop = loop
         self._session_service = session_service
         self._audio_service = audio_service
+        
+        # Logging
+        self._log_handler = TkinterLogHandler()
+        logging.getLogger().addHandler(self._log_handler)
         
         # UI thread management
         self._root: Optional[ctk.CTk] = None
@@ -493,10 +496,12 @@ class WidgetService:
                 if self._debug_visible and self._debug_panel and self._audio_service:
                     self._debug_panel.update_metrics(
                         state_text=self._state_manager.get_state_info().status_text if self._state_manager else "Unknown",
-                        queue_size=self._audio_service._queue.size, # Accessing private queue for debug
+                        queue_size=self._audio_service.queue_size,
                         is_playing=self._audio_service.is_playing,
                         position_ms=self._audio_service.position_ms
                     )
+                    # Poll logs
+                    self._log_handler.poll(self._debug_panel.get_log_widget())
                     
             except Exception:
                 logger.debug("Sync update error", exc_info=True)
@@ -624,14 +629,12 @@ class WidgetService:
         if self._state_manager:
             self._state_manager.reset()
             
-        # FORCE STOP AUDIO to clear pause state and queue
-        if self._audio_service:
-            self._audio_service.stop()
-            # We must restart the start_consumer thread if stop() killed it?
-            # AudioService.stop() sets running=False and joins thread.
-            # We need to restart it.
-            if not self._audio_service._running:
-                 self._audio_service.start()
+        # Stop current playback via event-driven approach
+        # WHY: Widget should not directly manage AudioService lifecycle.
+        # Publishing TrayAction(STOP) lets the system handle it cleanly
+        # through the existing event flow without killing the consumer thread.
+        if self._audio_service and self._audio_service.is_playing:
+            self._publish_event(TrayAction(action=TrayActionType.STOP))
         
         # Store text
         self._transcript_text = event.raw_text
@@ -982,6 +985,12 @@ class WidgetService:
 
     def _on_close(self) -> None:
         """Close/minimize widget."""
+        if self._log_handler:
+            try:
+                logging.getLogger().removeHandler(self._log_handler)
+            except Exception:
+                pass
+                
         if self._root:
             self._root.withdraw()
 

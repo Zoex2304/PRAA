@@ -59,7 +59,6 @@ class Application:
         self._tts_service: EdgeTTSService | None = None
         self._audio_service: AudioService | None = None
         self._tray_service: PystrayTrayService | None = None
-        self._tray_service: PystrayTrayService | None = None
         self._widget_service: WidgetService | None = None
         self._orchestrator: Orchestrator | None = None
         self._db_manager: DatabaseManager | None = None

@@ -5,7 +5,7 @@ import os
 
 class DebugPanel(ctk.CTkFrame):
     """
-    Collapsible panel showing system internals.
+    Collapsible panel showing system internals and logs.
     """
     
     def __init__(self, master, **kwargs):
@@ -23,6 +23,8 @@ class DebugPanel(ctk.CTkFrame):
         self._add_row(4, "Memory:", "0 MB")
         self._add_row(5, "Position:", "0ms")
         
+        self._create_log_area()
+        
     def _add_row(self, row, label, value):
         ctk.CTkLabel(
             self, text=label, 
@@ -38,6 +40,46 @@ class DebugPanel(ctk.CTkFrame):
         lbl.grid(row=row, column=1, padx=8, pady=1, sticky="e")
         self._labels[label] = lbl
         
+    def _create_log_area(self):
+        """Create log output area."""
+        # Separator
+        sep = ctk.CTkFrame(self, height=2, fg_color="#334155")
+        sep.grid(row=6, column=0, columnspan=2, sticky="ew", padx=8, pady=(8, 4))
+        
+        lbl = ctk.CTkLabel(
+            self, text="System Activity", 
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color="#94a3b8", anchor="w"
+        )
+        lbl.grid(row=7, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 2))
+
+        # Log Textbox
+        self._log_text = ctk.CTkTextbox(
+            self,
+            height=120,
+            font=ctk.CTkFont(family="Consolas", size=9),
+            text_color="#e2e8f0",
+            fg_color="#020617",
+            border_width=0,
+            activate_scrollbars=True
+        )
+        self._log_text.grid(row=8, column=0, columnspan=2, sticky="nsew", padx=8, pady=(0, 8))
+        self._log_text.configure(state="disabled") # readonly by default
+        
+        # Configure tags for basic coloring
+        try:
+             # Access underlying tkinter widget for tag configuration
+             self._log_text._textbox.tag_config("INFO", foreground="#22c55e")
+             self._log_text._textbox.tag_config("WARNING", foreground="#f59e0b")
+             self._log_text._textbox.tag_config("ERROR", foreground="#ef4444")
+             self._log_text._textbox.tag_config("DEBUG", foreground="#64748b")
+        except Exception:
+             pass
+
+    def get_log_widget(self):
+        """Return the log textbox widget."""
+        return self._log_text
+
     def update_metrics(
         self, 
         state_text: str, 
@@ -54,8 +96,12 @@ class DebugPanel(ctk.CTkFrame):
         )
         self._labels["Threads:"].configure(text=str(threading.active_count()))
         
-        process = psutil.Process(os.getpid())
-        mem = process.memory_info().rss / 1024 / 1024
-        self._labels["Memory:"].configure(text=f"{mem:.1f} MB")
+        if psutil:
+            try:
+                process = psutil.Process(os.getpid())
+                mem = process.memory_info().rss / 1024 / 1024
+                self._labels["Memory:"].configure(text=f"{mem:.1f} MB")
+            except Exception:
+                pass
         
         self._labels["Position:"].configure(text=f"{int(position_ms)}ms")

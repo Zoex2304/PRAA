@@ -51,6 +51,12 @@ class AudioService:
         self._consumer_thread: threading.Thread | None = None
         self._running = False
 
+        # Thread-safe lock for shared chunk metadata
+        # WHY: _chunk_meta, _chunk_durations, _total_chunks, and _current_chunk_idx
+        # are written by async handlers (main loop) and read by the consumer thread.
+        # Without synchronization, dict mutation during iteration can corrupt state.
+        self._meta_lock = threading.Lock()
+
         # Track chunk metadata for playback events
         self._chunk_meta: dict[str, tuple[int, int]] = {}  # path_str -> (index, total)
         self._current_chunk_idx: int = -1
@@ -73,6 +79,10 @@ class AudioService:
         self._consumer_thread.start()
         logger.info("Audio consumer thread started")
 
+    # ----------------------------------------------------------------
+    # PUBLIC PROPERTIES
+    # ----------------------------------------------------------------
+
     @property
     def position_ms(self) -> float:
         """Get current playback position in milliseconds (current file)."""
@@ -86,12 +96,16 @@ class AudioService:
     @property
     def current_position_global_ms(self) -> float:
         """Get global playback position across all chunks."""
-        if self._current_chunk_idx < 0:
+        with self._meta_lock:
+            chunk_idx = self._current_chunk_idx
+            durations = dict(self._chunk_durations)
+
+        if chunk_idx < 0:
             return 0.0
             
         elapsed = 0.0
-        for i in range(self._current_chunk_idx):
-            elapsed += self._chunk_durations.get(i, 0.0)
+        for i in range(chunk_idx):
+            elapsed += durations.get(i, 0.0)
             
         return elapsed + self.position_ms
 
@@ -103,13 +117,17 @@ class AudioService:
         Uses actual duration for ready chunks and average duration
         for pending chunks to prevent UI jumps.
         """
-        if self._total_chunks == 0:
+        with self._meta_lock:
+            total = self._total_chunks
+            durations = dict(self._chunk_durations)
+
+        if total == 0:
             return 0.0
             
-        known_duration = sum(self._chunk_durations.values())
-        num_known = len(self._chunk_durations)
+        known_duration = sum(durations.values())
+        num_known = len(durations)
         
-        if num_known == self._total_chunks:
+        if num_known == total:
             return known_duration
             
         # Estimate remaining
@@ -118,7 +136,7 @@ class AudioService:
         else:
             avg = 20_000.0  # Default 20s per chunk estimate
             
-        remaining = self._total_chunks - num_known
+        remaining = total - num_known
         return known_duration + (remaining * avg)
 
     @property
@@ -132,6 +150,16 @@ class AudioService:
         return self._player.is_playing and not self._player.is_paused
 
     @property
+    def is_running(self) -> bool:
+        """Whether the consumer thread is running."""
+        return self._running
+
+    @property
+    def queue_size(self) -> int:
+        """Current number of items in the playback queue."""
+        return self._queue.size
+
+    @property
     def current_block(self):
         """Latest audio block for spectrum analysis."""
         return self._player.current_block
@@ -141,6 +169,10 @@ class AudioService:
         """Current audio samplerate."""
         return self._player._samplerate
 
+    # ----------------------------------------------------------------
+    # LIFECYCLE
+    # ----------------------------------------------------------------
+
     def stop(self) -> None:
         """Stop the audio consumer thread and clean up."""
         self._running = False
@@ -148,15 +180,17 @@ class AudioService:
         self._queue.clear()
         self._queue.signal_done()
         
-        self._chunk_durations.clear()
-        self._total_chunks = 0
-        self._current_chunk_idx = -1
+        self._reset_chunk_state()
 
         if self._consumer_thread is not None:
             self._consumer_thread.join(timeout=2.0)
             self._consumer_thread = None
 
         logger.info("Audio consumer thread stopped")
+
+    # ----------------------------------------------------------------
+    # PRIVATE: Consumer Thread
+    # ----------------------------------------------------------------
 
     def _consumer_loop(self) -> None:
         """
@@ -176,9 +210,10 @@ class AudioService:
                     logger.warning("Audio file missing: %s", audio_path)
                     continue
 
-                # Publish playback start event with chunk metadata
-                meta = self._chunk_meta.get(audio_path.name, (0, 1))
-                self._current_chunk_idx = meta[0]
+                # Read chunk metadata under lock
+                with self._meta_lock:
+                    meta = self._chunk_meta.get(audio_path.name, (0, 1))
+                    self._current_chunk_idx = meta[0]
                 
                 logger.debug("Starting playback for chunk %s/%s: %s", meta[0], meta[1], audio_path.name)
                 
@@ -193,34 +228,8 @@ class AudioService:
                 # Play the audio (blocks until done or stopped)
                 self._player.play(audio_path, on_start=on_start)
 
-                # NOTE: Don't delete temp files — needed for Save Audio feature.
-                # Cleanup happens on app shutdown via TTS service.
-
-                # Publish playback stop event
+                # Publish completed event only if playback finished naturally
                 if not self._player.is_playing:
-                    # Only publish stopped if we genuinely finished (not preempted)
-                    # Actually, we should check if more items are in queue
-                    # For now, we publish completed event for this CHUNK
-                    # But the Service considers "PlaybackStopped" as session stop?
-                    # The original code sent PlaybackStopped(reason="completed")
-                    # This might trigger "Playback Complete" in UI.
-                    # We only want that if queue is empty AND no more chunks coming.
-                    
-                    # Logic: if queue empty and we have all chunks, then done.
-                    # But consumer loop doesn't know if synthesis is still running easily.
-                    # Actually, PlaybackStateManager manages the session state.
-                    # It receives PlaybackStopped.
-                    # If reason="completed", it goes to READY.
-                    # If user just plays 1 chunk, it goes READY.
-                    # If auto-playing sequence, we don't want "READY" between chunks.
-                    
-                    # Wait, the consumer loop blocks. 
-                    # So sending PlaybackStopped here happens AFTER play finishes.
-                    # If there is another item in queue immediately, we loop.
-                    # But we sent "Stopped". The UI might flicker or reset.
-                    # However, strictly speaking, *that file* stopped.
-                    
-                    # Let's keep original behavior for now to avoid breaking flow.
                     self._publish_event(PlaybackStopped(reason="completed"))
                     
             except Exception:
@@ -233,6 +242,27 @@ class AudioService:
             self._loop,
         )
 
+    def _stop_playback(self) -> None:
+        """
+        Stop current playback and clear the queue without killing the consumer thread.
+
+        This is the single, canonical stop implementation used by both
+        hotkey and tray stop handlers. Eliminates the duplicated stop logic
+        that previously existed across handle_hotkey_stop and handle_tray_action.
+        """
+        self._player.stop()
+        cleared = self._queue.clear()
+        self._reset_chunk_state()
+        self._publish_event(PlaybackStopped(reason="stopped"))
+        logger.debug("Playback stopped, cleared %d queued items", cleared)
+
+    def _reset_chunk_state(self) -> None:
+        """Reset all chunk tracking state under lock."""
+        with self._meta_lock:
+            self._chunk_durations.clear()
+            self._total_chunks = 0
+            self._current_chunk_idx = -1
+
     @staticmethod
     def _cleanup_temp_file(audio_path: Path) -> None:
         """Remove temp audio file after playback."""
@@ -242,29 +272,29 @@ class AudioService:
         except OSError:
             logger.debug("Could not remove temp file: %s", audio_path)
 
-    # ----- Event Handlers -----
+    # ----------------------------------------------------------------
+    # EVENT HANDLERS
+    # ----------------------------------------------------------------
 
     async def handle_synthesis_complete(self, event: SynthesisComplete) -> None:
         """Enqueue a synthesized audio chunk for playback."""
-        # Store chunk metadata for PlaybackStarted events
-        self._chunk_meta[event.audio_path.name] = (event.chunk_index, event.total_chunks)
-        self._total_chunks = event.total_chunks
+        # Store chunk metadata under lock
+        with self._meta_lock:
+            self._chunk_meta[event.audio_path.name] = (event.chunk_index, event.total_chunks)
+            self._total_chunks = event.total_chunks
         
         # Calculate duration from boundaries if available
         duration = 0.0
         if event.word_boundaries:
             last = event.word_boundaries[-1]
-            # offset + duration (ms)
             duration = last[0] + last[1] 
         elif event.sentence_boundaries:
             last = event.sentence_boundaries[-1]
             duration = last[0] + last[1]
         
-        # Fallback: estimate from text length if no boundaries? 
-        # Or just wait for player. But we need it for total duration.
-        # If 0, it will use average.
         if duration > 0:
-            self._chunk_durations[event.chunk_index] = duration
+            with self._meta_lock:
+                self._chunk_durations[event.chunk_index] = duration
             
         self._queue.enqueue(event.audio_path)
         logger.debug(
@@ -278,30 +308,12 @@ class AudioService:
         """Handle stop hotkey: stop playback and clear queue."""
         if event.action == HotkeyAction.STOP:
             logger.info("Stop hotkey pressed — stopping playback")
-            self._player.stop()
-            cleared = self._queue.clear()
-            
-            self._chunk_durations.clear()
-            self._total_chunks = 0
-            self._current_chunk_idx = -1
-            
-            self._publish_event(PlaybackStopped(reason="stopped"))
-            logger.debug("Cleared %d queued items", cleared)
+            self._stop_playback()
 
     async def handle_tray_action(self, event: TrayAction) -> None:
         """Handle tray menu actions for playback control."""
         if event.action == TrayActionType.STOP:
-            self.stop() # Use full stop to clear Durations
-            # But wait, stop() kills the thread. accessing self._player.stop is enough?
-            # handle_hotkey_stop just calls player.stop and queue.clear.
-            # safe to stick to that pattern but clear durations too.
-            self._player.stop()
-            self._queue.clear()
-            self._chunk_durations.clear()
-            self._total_chunks = 0
-            self._current_chunk_idx = -1
-            
-            self._publish_event(PlaybackStopped(reason="stopped"))
+            self._stop_playback()
 
         elif event.action == TrayActionType.PAUSE:
             self._player.pause()
