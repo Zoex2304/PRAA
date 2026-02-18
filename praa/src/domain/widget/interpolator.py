@@ -24,6 +24,19 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
+from src.domain.config.constants import (
+    PAUSE_COMMA_MS,
+    PAUSE_SEMICOLON_MS,
+    PAUSE_COLON_MS,
+    PAUSE_PERIOD_MS,
+    PAUSE_QUESTION_MS,
+    PAUSE_EXCLAMATION_MS,
+    PAUSE_DASH_MS,
+    PAUSE_ELLIPSIS_MS,
+    BREATH_INTERVAL_WORDS,
+    PAUSE_BREATH_MS,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -98,18 +111,17 @@ class PauseModel:
     """
     
     # Pause durations in milliseconds
-    PAUSE_COMMA = 250.0
-    PAUSE_SEMICOLON = 300.0
-    PAUSE_COLON = 350.0
-    PAUSE_PERIOD = 500.0
-    PAUSE_QUESTION = 550.0
-    PAUSE_EXCLAMATION = 500.0
-    PAUSE_DASH = 200.0
-    PAUSE_ELLIPSIS = 600.0
-    
-    # Breathing pause every N words
-    BREATH_INTERVAL = 12
-    PAUSE_BREATH = 400.0
+    PAUSE_COMMA = PAUSE_COMMA_MS
+    PAUSE_SEMICOLON = PAUSE_SEMICOLON_MS
+    PAUSE_COLON = PAUSE_COLON_MS
+    PAUSE_PERIOD = PAUSE_PERIOD_MS
+    PAUSE_QUESTION = PAUSE_QUESTION_MS
+    PAUSE_EXCLAMATION = PAUSE_EXCLAMATION_MS
+    PAUSE_DASH = PAUSE_DASH_MS
+    PAUSE_ELLIPSIS = PAUSE_ELLIPSIS_MS
+
+    BREATH_INTERVAL = BREATH_INTERVAL_WORDS
+    PAUSE_BREATH = PAUSE_BREATH_MS
     
     @classmethod
     def get_pause_duration(cls, word: str, word_position: int) -> float:

@@ -17,6 +17,8 @@ import numpy as np
 import sounddevice as sd
 import soundfile as sf
 
+from src.domain.config.constants import AUDIO_BLOCK_SIZE, AUDIO_DEFAULT_SAMPLERATE
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,7 +40,7 @@ class SoundDevicePlayer:
         self._paused = False
         self._current_thread: threading.Thread | None = None
         self._current_position_frames = 0
-        self._samplerate = 24000  # Default, updated on play
+        self._samplerate = AUDIO_DEFAULT_SAMPLERATE
         self._current_block: np.ndarray | None = None  # Latest audio block for spectrum
         self._duration_ms = 0.0
 
@@ -103,7 +105,7 @@ class SoundDevicePlayer:
             )
 
             # Play using sounddevice blocking mode with callback for stop/pause
-            block_size = 1024
+            block_size = AUDIO_BLOCK_SIZE
             position = 0
 
             stream = sd.OutputStream(

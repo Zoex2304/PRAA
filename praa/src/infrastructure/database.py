@@ -13,6 +13,8 @@ THREAD-SAFETY:
 
 from __future__ import annotations
 
+from src.domain.config.constants import DB_BUSY_TIMEOUT_MS
+
 import logging
 import sqlite3
 import threading
@@ -50,7 +52,7 @@ class DatabaseManager:
 
             # Enable WAL mode for concurrent read/write safety
             self._connection.execute("PRAGMA journal_mode=WAL")
-            self._connection.execute("PRAGMA busy_timeout=5000")
+            self._connection.execute(f"PRAGMA busy_timeout={DB_BUSY_TIMEOUT_MS}")
 
             logger.info("Connected to database: %s", self._db_path)
             self._init_schema()

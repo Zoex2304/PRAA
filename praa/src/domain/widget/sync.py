@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Callable, Optional
 
-from src.domain.widget.audio_time_provider import ITimeProvider, PlaybackPosition
+from src.domain.widget.time_provider import ITimeProvider, PlaybackPosition
 
 logger = logging.getLogger(__name__)
 

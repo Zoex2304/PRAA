@@ -5,6 +5,8 @@ import queue
 import threading
 from pathlib import Path
 
+from src.domain.config.constants import AUDIO_DEQUEUE_TIMEOUT_S
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,7 +23,7 @@ class AudioQueue:
             self._queue.qsize(),
         )
 
-    def dequeue(self, timeout: float = 0.5) -> Path | None:
+    def dequeue(self, timeout: float = AUDIO_DEQUEUE_TIMEOUT_S) -> Path | None:
         try:
             return self._queue.get(timeout=timeout)
         except queue.Empty:

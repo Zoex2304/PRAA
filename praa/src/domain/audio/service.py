@@ -30,6 +30,7 @@ from src.infrastructure.events import (
     TrayAction,
     TrayActionType,
 )
+from src.domain.config.constants import AUDIO_DEQUEUE_TIMEOUT_S, AUDIO_THREAD_JOIN_TIMEOUT_S
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +184,7 @@ class AudioService:
         self._reset_chunk_state()
 
         if self._consumer_thread is not None:
-            self._consumer_thread.join(timeout=2.0)
+            self._consumer_thread.join(timeout=AUDIO_THREAD_JOIN_TIMEOUT_S)
             self._consumer_thread = None
 
         logger.info("Audio consumer thread stopped")
@@ -201,7 +202,7 @@ class AudioService:
         """
         while self._running:
             try:
-                audio_path = self._queue.dequeue(timeout=0.5)
+                audio_path = self._queue.dequeue(timeout=AUDIO_DEQUEUE_TIMEOUT_S)
 
                 if audio_path is None:
                     continue
