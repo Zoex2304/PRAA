@@ -56,7 +56,7 @@ class DebugPanel(ctk.CTkFrame):
         # Log Textbox
         self._log_text = ctk.CTkTextbox(
             self,
-            height=120,
+            height=200,
             font=ctk.CTkFont(family="Consolas", size=9),
             text_color="#e2e8f0",
             fg_color="#020617",

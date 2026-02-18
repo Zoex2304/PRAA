@@ -84,6 +84,7 @@ class WidgetService:
         self._running = False
         self._debug_visible = False
         self._history_panel_visible = False
+        self._settings_popup = None
 
         self._drag_x = 0
         self._drag_y = 0
@@ -261,17 +262,17 @@ class WidgetService:
                 self._expand_btn.grid_remove()
 
         if has_content:
-            self._controls_frame.pack(fill="x", padx=8, pady=(4, 2))
+            self._controls_frame.pack(fill="x", padx=6, pady=(4, 2))
             if hasattr(self, '_chunk_progress') and self._chunk_progress:
-                self._chunk_progress.pack(fill="x", padx=12, pady=(2, 4))
+                self._chunk_progress.pack(fill="x", padx=10, pady=(2, 2))
             if hasattr(self, '_extra_panel_frame'):
                 if self._debug_visible or self._history_panel_visible:
-                    self._extra_panel_frame.pack(fill="x", padx=8)
+                    self._extra_panel_frame.pack(fill="x", padx=6)
             if hasattr(self, '_spectrum_frame'):
-                self._spectrum_frame.pack(fill="x", padx=8, pady=2)
+                self._spectrum_frame.pack(fill="x", padx=6, pady=2)
             self._progress_label.pack(fill="x", padx=12, pady=(2, 0))
-            self._transcript_header.pack(fill="x", padx=8, pady=(2, 0))
-            self._transcript_box.pack(fill="both", expand=True, padx=8, pady=(2, 8))
+            self._transcript_header.pack(fill="x", padx=6, pady=(2, 0))
+            self._transcript_box.pack(fill="both", expand=True, padx=6, pady=(2, 6))
 
     def _on_highlight_word(self, chunk_idx: int, start_char: int, end_char: int) -> None:
         if self._transcript_renderer:
@@ -340,6 +341,72 @@ class WidgetService:
 
     def _toggle_history(self) -> None:
         HistoryManager.toggle_history(self)
+
+    def _show_settings_menu(self) -> None:
+        if hasattr(self, '_settings_popup') and self._settings_popup is not None:
+            try:
+                self._settings_popup.destroy()
+            except Exception:
+                pass
+            self._settings_popup = None
+            return
+
+        import customtkinter as ctk
+        from .theme import BG_PANEL, BG_INPUT, ACCENT, TEXT_DIM, TEXT_MUTED, BORDER_SUBTLE
+
+        popup = ctk.CTkToplevel(self._root)
+        popup.overrideredirect(True)
+        popup.configure(fg_color=BG_PANEL)
+        popup.attributes("-topmost", True)
+
+        # Position below the kebab button
+        btn = self._kebab_btn
+        x = btn.winfo_rootx()
+        y = btn.winfo_rooty() + btn.winfo_height() + 4
+        popup.geometry(f"180x90+{x}+{y}")
+
+        # Voice row
+        ctk.CTkLabel(
+            popup, text="Voice", font=ctk.CTkFont(size=10),
+            text_color=TEXT_MUTED,
+        ).grid(row=0, column=0, padx=(10, 4), pady=(8, 4), sticky="w")
+
+        voice_menu = ctk.CTkOptionMenu(
+            popup, variable=self._voice_var,
+            values=["Ardi", "Gadis"], width=90, height=22,
+            font=ctk.CTkFont(size=10), fg_color=BG_INPUT,
+            button_color=ACCENT, command=self._on_voice_change,
+        )
+        voice_menu.grid(row=0, column=1, padx=(0, 10), pady=(8, 4), sticky="e")
+
+        # Speed row
+        ctk.CTkLabel(
+            popup, text="Speed", font=ctk.CTkFont(size=10),
+            text_color=TEXT_MUTED,
+        ).grid(row=1, column=0, padx=(10, 4), pady=(4, 8), sticky="w")
+
+        speed_menu = ctk.CTkOptionMenu(
+            popup, variable=self._speed_var,
+            values=["0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x"],
+            width=90, height=22, font=ctk.CTkFont(size=10),
+            fg_color=BG_INPUT, button_color=ACCENT,
+            command=self._on_speed_change,
+        )
+        speed_menu.grid(row=1, column=1, padx=(0, 10), pady=(4, 8), sticky="e")
+
+        popup.grid_columnconfigure(1, weight=1)
+
+        self._settings_popup = popup
+
+        # Close popup when clicking elsewhere
+        def _on_focus_out(e):
+            try:
+                popup.destroy()
+            except Exception:
+                pass
+            self._settings_popup = None
+
+        popup.bind("<FocusOut>", _on_focus_out)
 
     def _save_current_session(self) -> None:
         HistoryManager.save_current_session(self)
