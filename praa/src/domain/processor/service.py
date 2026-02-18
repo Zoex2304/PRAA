@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from src.domain.config.models import AppConfig
+from src.domain.config.models import AppConfig, LanguagePreference
 from src.domain.processor.cleaner import TextCleaner
 from src.domain.processor.chunker import TextChunker
 from src.domain.processor.content_filter import ContentFilter
@@ -107,8 +107,6 @@ class ProcessorService:
 
     def _detect_language(self, text: str) -> DetectedLanguage:
         """Detect language, respecting user's language preference override."""
-        from src.domain.config.models import LanguagePreference
-
         if self._config.language_preference == LanguagePreference.INDONESIAN:
             return DetectedLanguage.INDONESIAN
         elif self._config.language_preference == LanguagePreference.ENGLISH:

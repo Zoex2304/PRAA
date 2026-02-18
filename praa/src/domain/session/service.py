@@ -76,7 +76,7 @@ class SessionService:
             config_json = json.dumps(config)
             
             # 3. Insert into DB
-            cursor = self._db.execute(
+            cursor = self._db.execute_write(
                 """
                 INSERT INTO sessions (timestamp, text_content, audio_paths, word_boundaries, config_snapshot)
                 VALUES (?, ?, ?, ?, ?)
@@ -158,6 +158,28 @@ class SessionService:
         return " ".join(words[start_word_idx:])
 
     def cleanup_old_sessions(self, max_items: int = 10) -> None:
-        """Keep only the last N sessions and delete old audio files."""
-        # Simple implementation for v3
-        pass
+        """Keep only the last N sessions and delete old audio cache files."""
+        try:
+            # Get sessions that will be deleted
+            all_sessions = self._db.execute(
+                "SELECT audio_paths FROM sessions ORDER BY id DESC"
+            ).fetchall()
+
+            # Sessions beyond the limit will be deleted
+            for row in all_sessions[max_items:]:
+                try:
+                    paths = json.loads(row["audio_paths"])
+                    for p in paths:
+                        path = Path(p)
+                        if path.exists():
+                            path.unlink()
+                except Exception:
+                    pass  # Best-effort cleanup
+
+            # Delete old DB records
+            deleted = self._db.delete_sessions_older_than(max_items)
+            if deleted > 0:
+                logger.info("Cleaned up %d old sessions and their audio files", deleted)
+
+        except Exception:
+            logger.exception("Failed to cleanup old sessions")
