@@ -172,8 +172,9 @@ class ChunkListPanel(ctk.CTkScrollableFrame):
     def update_progress(self, index: int, current_ms: float, total_ms: float):
         if index in self._rows:
             row = self._rows[index]
-            # Only update if visible (playing)
-            if row['progress_bar'].winfo_viewable():
+            # Update guaranteed even if not visible
+            # if row['progress_bar'].winfo_viewable():
+            if True:
                 progress = 0
                 if total_ms > 0:
                     progress = min(1.0, max(0.0, current_ms / total_ms))
@@ -232,7 +233,7 @@ class ChunkListPanel(ctk.CTkScrollableFrame):
 
 class DebugPanel(ctk.CTkFrame):
     
-    def __init__(self, master, initial_chunks=None, **kwargs):
+    def __init__(self, master, initial_chunks=None, initial_statuses=None, **kwargs):
         super().__init__(master, fg_color="#0f172a", corner_radius=0, **kwargs)
         
         self._items = {}
@@ -247,7 +248,7 @@ class DebugPanel(ctk.CTkFrame):
         
         # Pre-populate if we have chunks
         if initial_chunks:
-            self._populate_initial_chunks(initial_chunks)
+            self._populate_initial_chunks(initial_chunks, initial_statuses)
 
         self._add_item("Threads", "0", provider=self._get_thread_details)
         self._add_item("Memory", "0 MB", provider=self._get_memory_details)
@@ -304,15 +305,18 @@ class DebugPanel(ctk.CTkFrame):
     def get_log_widget(self):
         return self._log_text
 
-    def _populate_initial_chunks(self, chunks):
+    def _populate_initial_chunks(self, chunks, statuses=None):
         """Populate the queue with initial chunks."""
         self.reset_chunks()
         for i, chunk in enumerate(chunks):
             name = chunk.strip().replace("\n", " ")[:30] + ("..." if len(chunk) > 30 else "")
-            # Assume pending/done based on index? 
-            # Ideally we'd know status, but 'pending' is safe default for restore.
-            # Usually populate happens after text processed, so they are pending or processing.
-            self.update_chunk_status(i, "pending", name)
+            
+            # Use tracked status or default to pending
+            status = "pending"
+            if statuses and i in statuses:
+                status = statuses[i]
+                
+            self.update_chunk_status(i, status, name)
         
         # Update count
         self._items["Queue"].set_value(str(len(chunks)))

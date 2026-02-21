@@ -60,6 +60,7 @@ class WidgetEventHandler:
     @staticmethod
     async def on_synthesis_started(widget: WidgetService, event) -> None:
         widget._total_chunks = event.total_chunks
+        widget._chunk_statuses[event.chunk_index] = "processing"
 
         if widget._debug_panel:
             if event.chunk_index == 0:
@@ -77,6 +78,7 @@ class WidgetEventHandler:
         logger.info("Synthesis complete: chunk=%d", event.chunk_index)
 
         widget._audio_paths.append(event.audio_path)
+        widget._chunk_statuses[event.chunk_index] = "ready"
 
         if event.word_boundaries and widget._sync_controller:
             widget._sync_controller.load_boundaries(event.chunk_index, event.word_boundaries)
@@ -104,6 +106,7 @@ class WidgetEventHandler:
             widget._root.after(0, widget._transcript_renderer.set_content, list(event.chunks))
             
         widget._text_chunks = list(event.chunks)
+        widget._chunk_statuses.clear()
             
         # Populate debug panel queue with chunk names
         if widget._debug_panel:
@@ -111,6 +114,10 @@ class WidgetEventHandler:
             for i, chunk in enumerate(event.chunks):
                 name = chunk.strip().replace("\n", " ")[:30] + ("..." if len(chunk) > 30 else "")
                 widget._debug_panel.update_chunk_status(i, "pending", name)
+                widget._chunk_statuses[i] = "pending"
+        else:
+             for i, chunk in enumerate(event.chunks):
+                widget._chunk_statuses[i] = "pending"
 
     @staticmethod
     async def on_playback_started(widget: WidgetService, event: PlaybackStarted) -> None:
@@ -118,6 +125,10 @@ class WidgetEventHandler:
 
         if widget._state_manager:
             widget._state_manager.start_playback(event.chunk_index)
+
+        if event.chunk_index > 0:
+            widget._chunk_statuses[event.chunk_index - 1] = "done"
+        widget._chunk_statuses[event.chunk_index] = "playing"
 
         if widget._debug_panel:
             # Mark previous as done

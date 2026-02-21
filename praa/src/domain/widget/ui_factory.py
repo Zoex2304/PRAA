@@ -115,7 +115,7 @@ class UIBuilder:
         widget._expanded_frame = expanded
 
         # ==============================================================
-        # Single control row — Play | Save | History | Debug | ⋮ | Time
+        # Single control row — Play | Save | Home | History | Debug | ⋮ | Time
         # ==============================================================
         controls = ctk.CTkFrame(expanded, fg_color=BG_PANEL, corner_radius=8, height=40)
         controls.pack(fill="x", padx=6, pady=(4, 2))
@@ -148,15 +148,22 @@ class UIBuilder:
         )
         widget._save_btn.pack(side="left", padx=2, pady=5)
 
+        # Navigation Buttons
+        widget._home_btn = ctk.CTkButton(
+            controls, text="Home", width=42,
+            command=widget._show_home, **sm_btn,
+        )
+        widget._home_btn.pack(side="left", padx=2, pady=5)
+
         widget._history_btn = ctk.CTkButton(
             controls, text="History", width=50,
-            command=widget._toggle_history, **sm_btn,
+            command=widget._show_history, **sm_btn,
         )
         widget._history_btn.pack(side="left", padx=2, pady=5)
 
         widget._debug_btn = ctk.CTkButton(
             controls, text="Debug", width=46,
-            command=widget._toggle_debug, **sm_btn,
+            command=widget._show_debug, **sm_btn,
         )
         widget._debug_btn.pack(side="left", padx=2, pady=5)
 
@@ -185,24 +192,16 @@ class UIBuilder:
         widget._voice_var = ctk.StringVar(value=current_voice)
         widget._speed_var = ctk.StringVar(value=f"{config.speed_rate:.1f}x")
 
-
-
         # ==============================================================
-        # Extra panels (debug / history) — hidden by default
+        # Home View (Spectrum + Transcript)
         # ==============================================================
-        widget._extra_panel_frame = ctk.CTkFrame(expanded, fg_color="transparent")
-
-        from .components.debug_panel import DebugPanel
-        widget._debug_panel = DebugPanel(widget._extra_panel_frame)
-        widget._debug_panel.pack(fill="both", expand=True)
-
-        # ==============================================================
+        widget._home_frame = ctk.CTkFrame(expanded, fg_color="transparent")
+        
         # Spectrum analyzer
-        # ==============================================================
         widget._spectrum_frame = ctk.CTkFrame(
-            expanded, fg_color=BG_PANEL, corner_radius=8,
+            widget._home_frame, fg_color=BG_PANEL, corner_radius=8,
         )
-        widget._spectrum_frame.pack(fill="x", padx=6, pady=2)
+        widget._spectrum_frame.pack(fill="x", padx=0, pady=2)
 
         widget._large_spectrum = ctk.CTkCanvas(
             widget._spectrum_frame, width=WIDGET_WIDTH - 28, height=50,
@@ -210,20 +209,16 @@ class UIBuilder:
         )
         widget._large_spectrum.pack(padx=4, pady=4)
 
-        # ==============================================================
         # Status
-        # ==============================================================
         widget._progress_label = ctk.CTkLabel(
-            expanded, text="Ready",
+            widget._home_frame, text="Ready",
             font=ctk.CTkFont(size=10), text_color=TEXT_MUTED, anchor="w",
         )
-        widget._progress_label.pack(fill="x", padx=12, pady=(2, 0))
+        widget._progress_label.pack(fill="x", padx=6, pady=(2, 0))
 
-        # ==============================================================
         # Transcript
-        # ==============================================================
-        widget._transcript_header = ctk.CTkFrame(expanded, fg_color="transparent")
-        widget._transcript_header.pack(fill="x", padx=6, pady=(2, 0))
+        widget._transcript_header = ctk.CTkFrame(widget._home_frame, fg_color="transparent")
+        widget._transcript_header.pack(fill="x", padx=0, pady=(2, 0))
 
         ctk.CTkLabel(
             widget._transcript_header, text="Transcript",
@@ -239,11 +234,17 @@ class UIBuilder:
         widget._copy_btn.pack(side="right", padx=4)
 
         widget._transcript_box = ctk.CTkTextbox(
-            expanded,
+            widget._home_frame,
             font=ctk.CTkFont(family="Segoe UI", size=13),
             fg_color=BG_PANEL, text_color=TEXT_DIM,
             corner_radius=8, height=200, wrap="word",
         )
-        widget._transcript_box.pack(fill="both", expand=True, padx=6, pady=(2, 6))
+        widget._transcript_box.pack(fill="both", expand=True, padx=0, pady=(2, 6))
 
+        # ==============================================================
+        # Extra panels (debug / history) — containers
+        # ==============================================================
+        widget._extra_panel_frame = ctk.CTkFrame(expanded, fg_color="transparent")
+
+        # Initial visibility update
         widget._refresh_content_visibility()

@@ -7,6 +7,7 @@ import logging
 import threading
 from pathlib import Path
 from typing import Optional
+from enum import Enum, auto
 
 import customtkinter as ctk
 
@@ -29,7 +30,7 @@ from .theme import (
     BG_DARK, SPECTRUM_COLORS,
     WIDGET_WIDTH, COMPACT_HEIGHT, EXPANDED_HEIGHT,
 )
-from .builder import UIBuilder
+from .ui_factory import UIBuilder
 from .handlers import WidgetEventHandler
 from .actions import WidgetActions
 from .history import HistoryManager
@@ -45,6 +46,11 @@ logger = logging.getLogger(__name__)
 
 class WidgetService:
     """Floating overlay widget. Thin facade over extracted modules."""
+
+    class ViewType(Enum):
+        HOME = auto()
+        HISTORY = auto()
+        DEBUG = auto()
 
     def __init__(
         self,
@@ -79,11 +85,14 @@ class WidgetService:
         self._total_chunks = 0
         self._processed_chunks = 0
         self._text_chunks: list[str] = []
+        self._chunk_statuses: dict[int, str] = {}
 
         self._expanded = False
         self._running = False
-        self._debug_visible = False
-        self._history_panel_visible = False
+        
+        self._current_view = self.ViewType.HOME
+        self._home_frame = None
+        
         self._history_panel = None
         self._settings_popup = None
 
@@ -192,7 +201,7 @@ class WidgetService:
 
                     self._time_label.configure(text=f"{fmt(pos, has_hours)}/{fmt(dur, has_hours)}")
 
-                if self._debug_visible and self._debug_panel and self._audio_service:
+                if self._current_view == self.ViewType.DEBUG and self._debug_panel and self._audio_service:
                     self._debug_panel.update_metrics(
                         state_text=self._state_manager.get_state_info().status_text if self._state_manager else "Unknown",
                         queue_size=self._audio_service.queue_size,
@@ -243,68 +252,79 @@ class WidgetService:
     def _refresh_content_visibility(self) -> None:
         if not hasattr(self, '_controls_frame'):
             return
+        
         has_content = bool(self._transcript_text)
 
-        self._controls_frame.pack_forget()
-
-        if hasattr(self, '_extra_panel_frame'):
-            self._extra_panel_frame.pack_forget()
-        if hasattr(self, '_spectrum_frame'):
-            self._spectrum_frame.pack_forget()
-        self._progress_label.pack_forget()
-        self._transcript_header.pack_forget()
-        self._transcript_box.pack_forget()
-
+        # 1. Expand button visibility
         if hasattr(self, '_expand_btn'):
             if has_content:
                 self._expand_btn.grid()
             else:
                 self._expand_btn.grid_remove()
 
-        if has_content:
-            self._controls_frame.pack(fill="x", padx=6, pady=(4, 2))
-            
-            if self._debug_visible:
-                # Show Debug Panel
-                if not self._debug_panel:
-                    from .components.debug_panel import DebugPanel
-                    self._debug_panel = DebugPanel(self._extra_panel_frame, initial_chunks=self._text_chunks)
-                
-                self._extra_panel_frame.pack(fill="x", padx=6)
-                self._debug_panel.pack(fill="both", expand=True)
-                
-                if self._history_panel:
-                    self._history_panel.pack_forget()
+        # 2. Main content area visibility
+        if not has_content:
+            self._controls_frame.pack_forget()
+            if hasattr(self, '_home_frame'): self._home_frame.pack_forget()
+            if hasattr(self, '_extra_panel_frame'): self._extra_panel_frame.pack_forget()
+            return
 
-            elif self._history_panel_visible:
-                # Show History Panel
+        # Content is available
+        self._controls_frame.pack(fill="x", padx=6, pady=(4, 2))
+        
+        # Hide all view containers first
+        if hasattr(self, '_home_frame'): 
+            self._home_frame.pack_forget()
+        if hasattr(self, '_extra_panel_frame'):
+            self._extra_panel_frame.pack_forget()
+            if self._debug_panel: self._debug_panel.pack_forget()
+            if self._history_panel: self._history_panel.pack_forget()
+
+        # Show selected view
+        if self._current_view == self.ViewType.HOME:
+            if hasattr(self, '_home_frame'):
+                self._home_frame.pack(fill="both", expand=True, padx=6, pady=(0, 6))
+
+        elif self._current_view == self.ViewType.HISTORY:
+            if hasattr(self, '_extra_panel_frame'):
+                self._extra_panel_frame.pack(fill="both", expand=True, padx=6, pady=(0, 6))
                 if not self._history_panel:
                     from .history import HistoryPanel
                     self._history_panel = HistoryPanel(self._extra_panel_frame, self)
-                
-                self._extra_panel_frame.pack(fill="x", padx=6)
                 self._history_panel.pack(fill="both", expand=True)
                 try:
-                    self._history_panel.refresh() 
+                    self._history_panel.refresh()
                 except Exception:
                     pass
-                    
-                if self._debug_panel:
-                    self._debug_panel.pack_forget()
-            else:
-                self._extra_panel_frame.pack_forget()
 
-            if hasattr(self, '_spectrum_frame'):
-                self._spectrum_frame.pack(fill="x", padx=6, pady=2)
-            self._progress_label.pack(fill="x", padx=12, pady=(2, 0))
-            self._transcript_header.pack(fill="x", padx=6, pady=(2, 0))
-            self._transcript_box.pack(fill="both", expand=True, padx=6, pady=(2, 6))
+        elif self._current_view == self.ViewType.DEBUG:
+            if hasattr(self, '_extra_panel_frame'):
+                self._extra_panel_frame.pack(fill="both", expand=True, padx=6, pady=(0, 6))
+                if not self._debug_panel:
+                    from .components.debug_panel import DebugPanel
+                    self._debug_panel = DebugPanel(
+                        self._extra_panel_frame, 
+                        initial_chunks=self._text_chunks,
+                        initial_statuses=self._chunk_statuses
+                    )
+                self._debug_panel.pack(fill="both", expand=True)
+
+    def _set_view(self, view_type: ViewType) -> None:
+        self._current_view = view_type
+        self._refresh_content_visibility()
+
+    def _show_home(self) -> None:
+        self._set_view(self.ViewType.HOME)
+
+    def _show_history(self) -> None:
+        self._set_view(self.ViewType.HISTORY)
+
+    def _show_debug(self) -> None:
+        self._set_view(self.ViewType.DEBUG)
 
     def _on_highlight_word(self, chunk_idx: int, start_char: int, end_char: int) -> None:
         if self._transcript_renderer:
             self._transcript_renderer.highlight_relative(chunk_idx, start_char, end_char)
-
-    
 
     async def on_hotkey_pressed(self, event: HotkeyPressed) -> None:
         await WidgetEventHandler.on_hotkey_pressed(self, event)
@@ -336,8 +356,6 @@ class WidgetService:
     async def on_tray_action(self, event: TrayAction) -> None:
         await WidgetEventHandler.on_tray_action(self, event)
 
-    
-
     def _on_toggle_play(self) -> None:
         WidgetActions.on_toggle_play(self)
 
@@ -358,20 +376,6 @@ class WidgetService:
 
     def _on_close(self) -> None:
         WidgetActions.on_close(self)
-
-    
-
-    def _toggle_debug(self) -> None:
-        self._debug_visible = not self._debug_visible
-        if self._debug_visible:
-            self._history_panel_visible = False # Mutual exclusion
-        self._refresh_content_visibility()
-
-    def _toggle_history(self) -> None:
-        self._history_panel_visible = not self._history_panel_visible
-        if self._history_panel_visible:
-            self._debug_visible = False # Mutual exclusion
-        self._refresh_content_visibility()
 
     def _show_settings_menu(self) -> None:
         if hasattr(self, '_settings_popup') and self._settings_popup is not None:
