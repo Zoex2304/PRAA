@@ -7,8 +7,7 @@ import flet.canvas as cv
 
 from src.domain.config.theme_config import ThemeConfig
 
-_HEIGHT = 16
-_RADIUS = 5  # playhead half-width
+_HEIGHT = 6
 
 _STATUS_COLORS: dict[str, str] = {
     "pending":    "#1e293b",
@@ -41,11 +40,13 @@ class ChunkTimelineComponent(ft.Container):
         self,
         theme: ThemeConfig,
         on_seek_chunk: Optional[Callable[[int], None]] = None,
+        on_seek_position: Optional[Callable[[int, float], None]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self._theme = theme
         self._on_seek_chunk = on_seek_chunk
+        self._on_seek_position = on_seek_position
         self._n_chunks = 0
         self._statuses: dict[int, str] = {}
         self._playing_chunk = -1
@@ -60,6 +61,7 @@ class ChunkTimelineComponent(ft.Container):
         self.content = ft.GestureDetector(
             content=self._canvas,
             on_tap_down=self._handle_tap,
+            on_pan_update=self._handle_drag,
         )
         self.height = _HEIGHT
         self.border_radius = 4
@@ -119,18 +121,12 @@ class ChunkTimelineComponent(ft.Container):
                 width=seg_w, height=h - 4,
                 paint=ft.Paint(color=color, style=ft.PaintingStyle.FILL),
             ))
-            # Playhead within the playing chunk
+            # Playhead within the playing chunk (2px white rect, no circle cap)
             if i == self._playing_chunk:
                 px = x + seg_w * max(0.0, min(1.0, self._playhead_frac))
                 shapes.append(cv.Rect(
                     x=px - 1, y=0,
                     width=2, height=h,
-                    paint=ft.Paint(color="#ffffff", style=ft.PaintingStyle.FILL),
-                ))
-                # Playhead circle cap
-                shapes.append(cv.Circle(
-                    x=px, y=h / 2,
-                    radius=_RADIUS,
                     paint=ft.Paint(color="#ffffff", style=ft.PaintingStyle.FILL),
                 ))
 
@@ -142,10 +138,27 @@ class ChunkTimelineComponent(ft.Container):
             return
         gap = 2
         seg_w = max(4.0, (self._draw_width - gap * (self._n_chunks - 1)) / self._n_chunks)
-        chunk_idx = int(e.local_x / (seg_w + gap))
+        chunk_idx = int(e.local_position.x / (seg_w + gap))
         chunk_idx = max(0, min(self._n_chunks - 1, chunk_idx))
         status = self._statuses.get(chunk_idx, "pending")
         if status in ("ready", "done", "playing"):
+            self._on_seek_chunk(chunk_idx)
+
+    def _handle_drag(self, e: ft.DragUpdateEvent) -> None:
+        if self._n_chunks == 0:
+            return
+        gap = 2
+        seg_w = max(4.0, (self._draw_width - gap * (self._n_chunks - 1)) / self._n_chunks)
+        chunk_idx = int(e.local_position.x / (seg_w + gap))
+        chunk_idx = max(0, min(self._n_chunks - 1, chunk_idx))
+        status = self._statuses.get(chunk_idx, "pending")
+        if status not in ("ready", "done", "playing"):
+            return
+        if chunk_idx == self._playing_chunk and self._on_seek_position:
+            x_in_seg = e.local_position.x - chunk_idx * (seg_w + gap)
+            frac = max(0.0, min(1.0, x_in_seg / seg_w))
+            self._on_seek_position(chunk_idx, frac)
+        elif self._on_seek_chunk:
             self._on_seek_chunk(chunk_idx)
 
     def _safe_update(self, control) -> None:

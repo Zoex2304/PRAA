@@ -31,8 +31,13 @@ class ActivityTracker:
         self._activities: dict[str, ActivityEntry] = {}
 
     def report(self, component: str, activity: str, detail: str = "") -> None:
+        thread_name = threading.current_thread().name
+        entry = ActivityEntry(component, activity, detail)
         with self._lock:
-            self._activities[component] = ActivityEntry(component, activity, detail)
+            self._activities[component] = entry
+            # Also index by caller's thread name so debug_page can look up by t.name
+            if thread_name != component:
+                self._activities[thread_name] = entry
 
     def clear(self, component: str) -> None:
         with self._lock:

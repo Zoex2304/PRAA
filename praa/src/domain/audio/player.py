@@ -43,6 +43,8 @@ class SoundDevicePlayer:
         self._samplerate = AUDIO_DEFAULT_SAMPLERATE
         self._current_block: np.ndarray | None = None  # Latest audio block for spectrum
         self._duration_ms = 0.0
+        self._total_frames: int = 0
+        self._seek_frame: Optional[int] = None
 
     @property
     def position_ms(self) -> float:
@@ -84,7 +86,9 @@ class SoundDevicePlayer:
             data, samplerate = sf.read(str(audio_path), dtype="float32")
             self._samplerate = samplerate
             self._current_position_frames = 0
-            
+            self._total_frames = len(data)
+            self._seek_frame = None
+
             # Calculate duration
             if samplerate > 0:
                 self._duration_ms = (len(data) / samplerate) * 1000.0
@@ -126,6 +130,12 @@ class SoundDevicePlayer:
 
                     # Check pause (blocks here while paused)
                     self._pause_event.wait()
+
+                    # Apply seek if requested
+                    if self._seek_frame is not None:
+                        position = self._seek_frame
+                        self._seek_frame = None
+                        self._current_position_frames = position
 
                     # Write next block
                     end_pos = min(position + block_size, len(data))
@@ -174,3 +184,8 @@ class SoundDevicePlayer:
             self._pause_event.set()
             self._paused = False
             logger.debug("Playback resumed")
+
+    def seek(self, fraction: float) -> None:
+        """Seek to a fractional position within the current file."""
+        if self._playing and self._total_frames > 0:
+            self._seek_frame = int(max(0.0, min(1.0, fraction)) * self._total_frames)

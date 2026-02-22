@@ -56,7 +56,7 @@ class ProcessorService:
         raw_text = event.raw_text
         preview = raw_text[:100].replace("\n", " ")
         logger.info(
-            "[bold green]Processing[/]: %d chars — [dim]%s%s[/]",
+            "Processing: %d chars — %s%s",
             len(raw_text),
             preview,
             "..." if len(raw_text) > 100 else "",

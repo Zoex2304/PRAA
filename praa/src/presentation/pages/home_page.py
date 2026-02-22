@@ -22,6 +22,7 @@ class HomePage(ft.Container):
         on_play_chunk: Optional[Callable[[int], None]] = None,
         on_pause_chunk: Optional[Callable[[int], None]] = None,
         on_seek_chunk: Optional[Callable[[int], None]] = None,
+        on_seek_position: Optional[Callable[[int, float], None]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -37,7 +38,9 @@ class HomePage(ft.Container):
             on_play_chunk=on_play_chunk,
             on_pause_chunk=on_pause_chunk,
         )
-        self.timeline = ChunkTimelineComponent(theme, on_seek_chunk=on_seek_chunk)
+        self.timeline = ChunkTimelineComponent(
+            theme, on_seek_chunk=on_seek_chunk, on_seek_position=on_seek_position
+        )
 
         self._playing_view = ft.Column(
             controls=[
@@ -78,9 +81,10 @@ class HomePage(ft.Container):
     def _copy_to_clipboard(self, text: str) -> None:
         if self.page:
             self.page.set_clipboard(text)
-            self.page.open(
-                ft.SnackBar(content=ft.Text("Copied to clipboard"), duration=1500)
-            )
+            sb = ft.SnackBar(content=ft.Text("Copied to clipboard"), duration=1500)
+            self.page.overlay.append(sb)
+            sb.open = True
+            self.page.update()
 
     def _safe_update(self, control: ft.Control) -> None:
         try:

@@ -82,6 +82,8 @@ class Application:
                 loop=loop,
                 session_service=self._session_service,
                 audio_service=self._audio_service,
+                config_service=self._config_service,
+                activity_tracker=self._activity_tracker,
             )
 
         self._orchestrator = Orchestrator(
@@ -125,12 +127,12 @@ class Application:
         await self._event_bus.publish(AppStarted())
 
         logger.info("-" * 50)
-        logger.info("  [bold]PRAA is running[/] — listening for hotkeys")
-        logger.info("  READ: [cyan]%s[/]", self._config.hotkey_read)
-        logger.info("  STOP: [cyan]%s[/]", self._config.hotkey_stop)
-        logger.info("  Voice: [cyan]%s[/]", self._config.voice_id)
-        logger.info("  Speed: [cyan]%.1fx[/]", self._config.speed_rate)
-        logger.info("  UI Mode: [cyan]%s[/]", self._config.ui_mode.value)
+        logger.info("  PRAA is running — listening for hotkeys")
+        logger.info("  READ: %s", self._config.hotkey_read)
+        logger.info("  STOP: %s", self._config.hotkey_stop)
+        logger.info("  Voice: %s", self._config.voice_id)
+        logger.info("  Speed: %.1fx", self._config.speed_rate)
+        logger.info("  UI Mode: %s", self._config.ui_mode.value)
         logger.info("-" * 50)
 
     async def _handle_shutdown(self, event: AppShutdown):

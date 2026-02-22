@@ -37,7 +37,13 @@ class CompactBarComponent(ft.Container):
         )
 
         # Center animated content slot — fades between idle / milestone / spectrum
-        self._center_slot = ft.Container(expand=True, key="bar-idle")
+        self._idle_hint = ft.Text(
+            "Select text → Ctrl+Shift+R",
+            size=theme.typography.font_size_xs,
+            color=theme.colors.text_dim,
+            italic=True,
+        )
+        self._center_slot = ft.Container(content=self._idle_hint, expand=True, key="bar-idle")
         self._center_wrap = ft.Container(
             content=self._center_slot,
             expand=True,
@@ -54,12 +60,14 @@ class CompactBarComponent(ft.Container):
             icon_color=theme.colors.text_muted,
             tooltip="Expand",
             on_click=lambda _: self._on_toggle_expand() if self._on_toggle_expand else None,
+            visible=False,
         )
         self._play_btn = ft.IconButton(
             icon=ft.Icons.PLAY_ARROW,
             icon_size=18,
             icon_color=theme.colors.accent,
             on_click=lambda _: self._on_toggle_play() if self._on_toggle_play else None,
+            visible=False,
         )
         self._settings_btn = ft.IconButton(
             icon=ft.Icons.MORE_VERT,
@@ -67,6 +75,7 @@ class CompactBarComponent(ft.Container):
             icon_color=theme.colors.text_muted,
             tooltip="Settings",
             on_click=lambda _: self._on_settings() if self._on_settings else None,
+            visible=False,
         )
         self._close_btn = ft.IconButton(
             icon=ft.Icons.CLOSE,
@@ -92,6 +101,17 @@ class CompactBarComponent(ft.Container):
         self.border_radius = ft.border_radius.all(12)
         self.padding = ft.padding.symmetric(horizontal=8, vertical=4)
         self.height = self._theme.dimensions.compact_height
+
+    def activate(self) -> None:
+        """Called once after first hotkey — reveals action controls and clears idle hint."""
+        self._expand_btn.visible = True
+        self._play_btn.visible = True
+        self._settings_btn.visible = True
+        self._center_slot.content = None
+        self._safe_update(self._expand_btn)
+        self._safe_update(self._play_btn)
+        self._safe_update(self._settings_btn)
+        self._safe_update(self._center_wrap)
 
     def set_bar_content(self, control: ft.Control | None) -> None:
         self._center_wrap.opacity = 0.0

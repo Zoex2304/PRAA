@@ -71,7 +71,7 @@ class TkinterClipboardService:
         if text:
             preview = text[:80].replace("\n", " ")
             logger.info(
-                "[bold cyan]Clipboard captured[/]: %d chars — [dim]%s%s[/]",
+                "Clipboard captured: %d chars — %s%s",
                 len(text),
                 preview,
                 "..." if len(text) > 80 else "",

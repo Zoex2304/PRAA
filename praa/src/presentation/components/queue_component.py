@@ -19,6 +19,7 @@ _STATUS_CFG: dict[str, tuple[str, str, bool]] = {
     "processing": ("Synthesizing", "#f59e0b", False),
     "ready":      ("Ready",        "#06b6d4", True),
     "playing":    ("Playing",      "#22c55e", True),
+    "paused":     ("Paused",       "#eab308", True),
     "done":       ("Done",         "#64748b", True),
 }
 
@@ -91,7 +92,7 @@ class _QueueRow(ft.Container):
         self._status.color = color
         self._player.set_enabled(playable)
         self._player.set_playing(status == "playing")
-        self._progress.visible = status == "playing"
+        self._progress.visible = status in ("playing", "paused")
         self._time.visible = status in ("playing", "done")
         if name:
             self._name.value = name

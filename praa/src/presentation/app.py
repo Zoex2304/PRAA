@@ -36,6 +36,7 @@ class FletApp:
         on_play_chunk: Optional[Callable[[int], None]] = None,
         on_pause_chunk: Optional[Callable[[int], None]] = None,
         on_seek_chunk: Optional[Callable[[int], None]] = None,
+        on_seek_position: Optional[Callable[[int, float], None]] = None,
     ):
         self._theme = theme
         self._config = config
@@ -47,6 +48,7 @@ class FletApp:
         self._on_play_chunk = on_play_chunk
         self._on_pause_chunk = on_pause_chunk
         self._on_seek_chunk = on_seek_chunk
+        self._on_seek_position = on_seek_position
 
         self._page: Optional[ft.Page] = None
         self._expanded = False
@@ -95,6 +97,7 @@ class FletApp:
             on_play_chunk=self._on_play_chunk,
             on_pause_chunk=self._on_pause_chunk,
             on_seek_chunk=self._on_seek_chunk,
+            on_seek_position=self._on_seek_position,
         )
         self.debug = DebugPage(
             self._theme,
@@ -222,6 +225,10 @@ class FletApp:
             self.home.timeline.reset()
         if self.debug:
             self.debug.reset_chunks()
+
+    def activate_bar(self) -> None:
+        if self.compact_bar:
+            self.compact_bar.activate()
 
     # ----------------------------------------------------------------
     # Expand / Collapse
@@ -376,21 +383,21 @@ class FletApp:
             bgcolor=colors.bg_panel,
             title=ft.Text("Settings", size=typo.font_size_sm, color=colors.text_primary, weight=ft.FontWeight.BOLD),
             content=content,
-            actions=[ft.TextButton("Close", on_click=lambda _: self._page.close(self._settings_dlg), style=ft.ButtonStyle(color=colors.accent))],
+            actions=[ft.TextButton("Close", on_click=lambda _: self._page.pop_dialog(), style=ft.ButtonStyle(color=colors.accent))],
         )
-        self._page.open(self._settings_dlg)
+        self._page.show_dialog(self._settings_dlg)
 
     def _handle_voice(self, voice_id: str) -> None:
         if self._on_settings_voice:
             self._on_settings_voice(voice_id)
         if hasattr(self, "_settings_dlg") and self._page:
-            self._page.close(self._settings_dlg)
+            self._page.pop_dialog()
 
     def _handle_language(self, lang_code: str) -> None:
         if self._on_settings_language:
             self._on_settings_language(lang_code)
         if hasattr(self, "_settings_dlg") and self._page:
-            self._page.close(self._settings_dlg)
+            self._page.pop_dialog()
 
     def _nav_btn(
         self, label: str, icon, view: ViewType, selected: bool = False

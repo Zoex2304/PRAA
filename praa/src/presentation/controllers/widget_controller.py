@@ -88,6 +88,7 @@ class WidgetController:
         self._text_chunks: list[str] = []
         self._chunk_statuses: dict[int, str] = {}
         self._running = False
+        self._has_been_activated = False
 
         self._app = FletApp(
             theme=theme,
@@ -100,6 +101,7 @@ class WidgetController:
             on_play_chunk=self._handle_play_chunk,
             on_pause_chunk=self._handle_pause_chunk,
             on_seek_chunk=self._handle_seek_chunk,
+            on_seek_position=self._handle_seek_position,
         )
 
     @property
@@ -143,6 +145,10 @@ class WidgetController:
     async def on_text_captured(self, event: TextCaptured) -> None:
         logger.info("Text captured: %d chars", len(event.raw_text))
         self._activity_tracker.report("WidgetController", "Processing", "Text captured")
+
+        if not self._has_been_activated:
+            self._app.activate_bar()
+            self._has_been_activated = True
 
         if self._sync_controller:
             self._sync_controller.reset()
@@ -253,6 +259,7 @@ class WidgetController:
         self._activity_tracker.report("WidgetController", "Paused")
         if self._app.compact_bar:
             self._app.compact_bar.set_play_icon(False)
+        self._app.update_queue_status(self._current_playing_chunk, "paused")
         self._schedule_ui_update()
 
     async def on_playback_resumed(self, event: PlaybackResumed) -> None:
@@ -261,6 +268,7 @@ class WidgetController:
         self._activity_tracker.report(
             "WidgetController", "Playing", f"Chunk {self._current_playing_chunk + 1}"
         )
+        self._app.update_queue_status(self._current_playing_chunk, "playing")
         self._schedule_ui_update()
 
     async def on_playback_stopped(self, event: PlaybackStopped) -> None:
@@ -300,6 +308,15 @@ class WidgetController:
             return
         if chunk_index >= len(self._audio_paths):
             return
+        # If paused on exactly this chunk, resume rather than restart
+        paused_here = (
+            self._audio_service.is_playing
+            and not self._audio_service.is_actively_playing
+            and self._current_playing_chunk == chunk_index
+        )
+        if paused_here:
+            self._publish_event(TrayAction(action=TrayActionType.RESUME))
+            return
         self._audio_service.play_from_chunk(chunk_index, self._audio_paths)
 
     def _handle_pause_chunk(self, chunk_index: int) -> None:
@@ -309,6 +326,15 @@ class WidgetController:
     def _handle_seek_chunk(self, chunk_index: int) -> None:
         """Seek to a chunk by clicking the timeline."""
         self._handle_play_chunk(chunk_index)
+
+    def _handle_seek_position(self, chunk_index: int, fraction: float) -> None:
+        """Seek within the currently playing chunk via timeline drag."""
+        if not self._audio_service:
+            return
+        if chunk_index == self._current_playing_chunk:
+            self._audio_service.seek_within_chunk(fraction)
+        else:
+            self._handle_play_chunk(chunk_index)
 
     def _handle_voice_change(self, voice_id: str) -> None:
         self._publish_event(TrayAction(action=TrayActionType.CHANGE_VOICE, value=voice_id))

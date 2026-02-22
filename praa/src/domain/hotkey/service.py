@@ -85,7 +85,7 @@ class PynputHotkeyService:
         self._controller = keyboard.Controller()
 
         logger.info(
-            "[bold]Hotkey service[/]: READ=[cyan]%s[/], STOP=[cyan]%s[/]",
+            "Hotkey service: READ=%s, STOP=%s",
             config.hotkey_read,
             config.hotkey_stop,
         )
@@ -101,12 +101,12 @@ class PynputHotkeyService:
         normalized = self._normalize_pressed()
 
         if self._hotkey_read.issubset(normalized):
-            logger.info("[bold green]READ hotkey[/] triggered — auto-copying selection")
+            logger.info("READ hotkey triggered — auto-copying selection")
             self._pressed.clear()
             self._auto_copy_and_publish(HotkeyAction.READ)
 
         elif self._hotkey_stop.issubset(normalized):
-            logger.info("[bold red]STOP hotkey[/] triggered")
+            logger.info("STOP hotkey triggered")
             self._publish_event(HotkeyAction.STOP)
             self._pressed.clear()
 

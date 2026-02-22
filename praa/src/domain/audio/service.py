@@ -337,6 +337,10 @@ class AudioService:
             logger.info("Stop hotkey pressed — stopping playback")
             self._stop_playback()
 
+    def seek_within_chunk(self, fraction: float) -> None:
+        """Seek to a position within the currently playing chunk."""
+        self._player.seek(fraction)
+
     async def handle_tray_action(self, event: TrayAction) -> None:
         """Handle tray menu actions for playback control."""
         if event.action == TrayActionType.STOP:
