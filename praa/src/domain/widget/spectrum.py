@@ -84,24 +84,7 @@ class SpectrumAnalyzer:
             logger.debug("Spectrum analysis error", exc_info=True)
             return self._prev_magnitudes.tolist()
 
-    def draw(self, canvas, width: int, height: int, colors: list[str]) -> None:
-        canvas.delete("all")
-        bars = self._prev_magnitudes
-        num_bars = len(bars)
 
-        bar_width = max(2, (width - num_bars * 2) // num_bars)
-        gap = 2
-
-        for i in range(num_bars):
-            bar_h = max(2, bars[i] * (height - 4))
-            x = i * (bar_width + gap) + gap
-            y = height - 2
-            color = colors[i % len(colors)]
-
-            canvas.create_rectangle(
-                x, y - bar_h, x + bar_width, y,
-                fill=color, outline="", width=0,
-            )
 
     # ------------------------------------------------------------------
     # Internal helpers
