@@ -13,6 +13,7 @@ class CompactBarComponent(ft.Container):
         theme: ThemeConfig,
         on_toggle_expand: Optional[Callable] = None,
         on_toggle_play: Optional[Callable] = None,
+        on_settings: Optional[Callable] = None,
         on_close: Optional[Callable] = None,
         **kwargs,
     ):
@@ -20,6 +21,7 @@ class CompactBarComponent(ft.Container):
         self._theme = theme
         self._on_toggle_expand = on_toggle_expand
         self._on_toggle_play = on_toggle_play
+        self._on_settings = on_settings
         self._on_close = on_close
 
         self._status_icon = ft.Icon(
@@ -59,6 +61,13 @@ class CompactBarComponent(ft.Container):
             icon_color=theme.colors.accent,
             on_click=lambda _: self._on_toggle_play() if self._on_toggle_play else None,
         )
+        self._settings_btn = ft.IconButton(
+            icon=ft.Icons.MORE_VERT,
+            icon_size=14,
+            icon_color=theme.colors.text_muted,
+            tooltip="Settings",
+            on_click=lambda _: self._on_settings() if self._on_settings else None,
+        )
         self._close_btn = ft.IconButton(
             icon=ft.Icons.CLOSE,
             icon_size=14,
@@ -73,6 +82,7 @@ class CompactBarComponent(ft.Container):
                 self._center_wrap,
                 self._expand_btn,
                 self._play_btn,
+                self._settings_btn,
                 self._close_btn,
             ],
             spacing=4,

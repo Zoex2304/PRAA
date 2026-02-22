@@ -19,6 +19,7 @@ from src.domain.tray.service import PystrayTrayService
 from src.domain.tts.service import EdgeTTSService
 from src.domain.session.service import SessionService
 from src.infrastructure.database import DatabaseManager
+from src.infrastructure.activity_tracker import ActivityTracker
 from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import AppShutdown, AppStarted, TrayAction, TrayActionType
 from src.infrastructure.flet_log_handler import FletLogHandler
@@ -39,6 +40,7 @@ class Application:
         self._config = self._config_service.config
         self._theme = ThemeConfig.load_from_base(base_dir)
 
+        self._activity_tracker = ActivityTracker()
         self._hotkey_service: PynputHotkeyService | None = None
         self._clipboard_service: TkinterClipboardService | None = None
         self._processor_service: ProcessorService | None = None

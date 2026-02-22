@@ -248,6 +248,27 @@ class AudioService:
             self._loop,
         )
 
+    def play_from_chunk(self, chunk_index: int, audio_paths: list[Path]) -> None:
+        """Stop current playback and restart from the given chunk index.
+
+        Allows independent or interrupted chunk playback from the Queue UI.
+        Emits PlaybackStopped then PlaybackStarted (via consumer thread) in sequence.
+        """
+        self._player.stop()
+        self._queue.clear()
+        total = len(audio_paths)
+        with self._meta_lock:
+            self._chunk_meta.clear()
+            self._total_chunks = total
+            self._current_chunk_idx = -1
+        self._publish_event(PlaybackStopped(reason="stopped"))
+        for idx in range(chunk_index, total):
+            path = audio_paths[idx]
+            with self._meta_lock:
+                self._chunk_meta[path.name] = (idx, total)
+            self._queue.enqueue(path)
+        logger.debug("Seek: playing from chunk %d/%d", chunk_index, total)
+
     def _stop_playback(self) -> None:
         """
         Stop current playback and clear the queue without killing the consumer thread.

@@ -118,12 +118,25 @@ class ConfigService:
 
         elif event.action == TrayActionType.CHANGE_VOICE and event.value:
             try:
-                new_gender = VoiceGender(event.value)
-                await self.update("voice_gender", new_gender)
-                # Also update the primary voice_id based on new gender
-                new_voice = self._config.get_voice_for_language("id")
-                await self.update("voice_id", new_voice)
-                new_voice_en = self._config.get_voice_for_language("en")
-                await self.update("voice_en", new_voice_en)
+                if "Neural" in event.value:
+                    # Direct voice_id from settings UI — update the matching language slot
+                    from src.domain.config.voices_config import find_voice
+                    entry = find_voice(event.value)
+                    if entry:
+                        if entry.language_code == "id":
+                            await self.update("voice_id", entry.voice_id)
+                        elif entry.language_code == "en":
+                            await self.update("voice_en", entry.voice_id)
+                        await self.update("voice_gender", VoiceGender(entry.gender))
+                    else:
+                        logger.warning("Unknown voice_id in catalog: %s", event.value)
+                else:
+                    # Legacy: gender string ("male" / "female")
+                    new_gender = VoiceGender(event.value)
+                    await self.update("voice_gender", new_gender)
+                    new_voice = self._config.get_voice_for_language("id")
+                    await self.update("voice_id", new_voice)
+                    new_voice_en = self._config.get_voice_for_language("en")
+                    await self.update("voice_en", new_voice_en)
             except (ValueError, TypeError):
                 logger.warning("Invalid voice value from tray: %s", event.value)

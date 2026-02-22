@@ -3,59 +3,63 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from typing import Callable, Optional
 
 import flet as ft
 import psutil
 
 from src.domain.config.theme_config import ThemeConfig
+from src.infrastructure.activity_tracker import ActivityTracker
 from src.presentation.components.collapsible_component import CollapsibleComponent
-from src.presentation.components.queue_chunk_row import QueueChunkRow
+from src.presentation.components.kpi_grid_component import KpiGridComponent
+from src.presentation.components.queue_component import QueueComponent
 
 logger = logging.getLogger(__name__)
 
 
-def _describe_thread(name: str) -> str:
+def _thread_role(name: str) -> str:
+    """Deterministic objective derived from thread name."""
     lower = name.lower()
-    if "mainthread" in lower:
-        return "Main loop"
-    if "flet" in lower:
-        return "UI event loop"
-    if "asyncio" in lower or "async" in lower:
-        return "EventBus dispatch"
-    if "hotkey" in lower or "pynput" in lower:
-        return "Hotkey listener"
-    if "tray" in lower or "pystray" in lower:
-        return "System tray"
-    if "audio" in lower or "playback" in lower or "sounddevice" in lower:
-        return "Audio playback"
-    if "tts" in lower or "synthesis" in lower:
-        return "TTS synthesis"
-    if "thread" in lower and "pool" in lower:
-        return "Thread pool"
-    if "watchdog" in lower or "observer" in lower:
-        return "File watcher"
-    if "lingua" in lower:
-        return "Language detection"
-    return "Worker"
+    if "mainthread" in lower:                       return "Application entry point"
+    if "flet" in lower:                             return "UI event pump"
+    if "audio" in lower:                            return "Audio playback consumer"
+    if "tts" in lower or "synthesis" in lower:      return "TTS synthesis worker"
+    if "hotkey" in lower or "pynput" in lower:      return "Global hotkey listener"
+    if "tray" in lower or "pystray" in lower:       return "System tray handler"
+    if "asyncio" in lower or "async" in lower:      return "Async event dispatcher"
+    if "lingua" in lower:                           return "Language detector"
+    if "thread" in lower and "pool" in lower:       return "Thread pool worker"
+    if "watchdog" in lower:                         return "File watcher"
+    return "Background worker"
 
 
 class DebugPage(ft.Container):
-    def __init__(self, theme: ThemeConfig, **kwargs):
+    def __init__(
+        self,
+        theme: ThemeConfig,
+        on_play_chunk: Optional[Callable[[int], None]] = None,
+        on_pause_chunk: Optional[Callable[[int], None]] = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._theme = theme
-        self._chunk_rows: dict[int, QueueChunkRow] = {}
-        self._queue_col = ft.Column(spacing=2)
         self._log_handler = None
+        self._activity_tracker: Optional[ActivityTracker] = None
 
         colors = theme.colors
         typo = theme.typography
 
-        # State: flat indicator row (not collapsible)
+        # ── State: flat indicator row ─────────────────────────────────
         self._state_dot = ft.Icon(ft.Icons.CIRCLE, size=10, color=colors.status_idle)
         self._state_text = ft.Text("Idle", size=typo.font_size_sm, color=colors.text_dim)
         state_row = ft.Row(
             controls=[
-                ft.Text("State", size=typo.font_size_sm, color=colors.text_muted, weight=ft.FontWeight.BOLD),
+                ft.Text(
+                    "State",
+                    size=typo.font_size_sm,
+                    color=colors.text_muted,
+                    weight=ft.FontWeight.BOLD,
+                ),
                 ft.Container(expand=True),
                 self._state_dot,
                 self._state_text,
@@ -64,40 +68,48 @@ class DebugPage(ft.Container):
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
-        # System: memory + PID (collapsible)
-        self._system_item = CollapsibleComponent(
-            theme, label="System", initial_value="—",
-            detail_builder=self._build_system_details,
+        # ── System: KPI grid — always visible, no collapsible ─────────
+        self._kpi = KpiGridComponent(theme)
+        system_section = ft.Column(
+            controls=[
+                ft.Text(
+                    "System",
+                    size=typo.font_size_sm,
+                    color=colors.text_muted,
+                    weight=ft.FontWeight.BOLD,
+                ),
+                self._kpi,
+            ],
+            spacing=4,
         )
 
-        # Threads: collapsible with per-thread activity
-        self._thread_list_col = ft.Column(spacing=3)
+        # ── Threads: collapsible, real objectives via ActivityTracker ──
+        self._thread_col = ft.Column(spacing=6)
         self._threads_item = CollapsibleComponent(
             theme,
             label="Threads",
             initial_value=str(threading.active_count()),
-            detail_builder=lambda: self._thread_list_col,
+            detail_builder=lambda: self._thread_col,
         )
 
-        # Queue: collapsible with chunk rows + progress
-        self._queue_item = CollapsibleComponent(
+        # ── Queue: standalone reusable component ──────────────────────
+        self.queue = QueueComponent(
             theme,
-            label="Queue",
-            initial_value="0",
-            detail_builder=lambda: self._queue_col,
+            on_play_chunk=on_play_chunk,
+            on_pause_chunk=on_pause_chunk,
         )
 
         self.content = ft.Column(
             controls=[
                 state_row,
                 ft.Divider(height=1, color=colors.border_subtle),
-                self._system_item,
+                system_section,
                 ft.Divider(height=1, color=colors.border_subtle),
                 self._threads_item,
                 ft.Divider(height=1, color=colors.border_subtle),
-                self._queue_item,
+                self.queue,
             ],
-            spacing=2,
+            spacing=4,
             scroll=ft.ScrollMode.AUTO,
             expand=True,
         )
@@ -105,98 +117,96 @@ class DebugPage(ft.Container):
         self.padding = ft.padding.all(8)
         self.expand = True
 
+        self._refresh_system_kpi()
+
+    # ------------------------------------------------------------------
+    # Public setters
+    # ------------------------------------------------------------------
+
     def set_log_handler(self, handler) -> None:
         self._log_handler = handler
 
-    def update_state(self, text: str, color: str | None = None) -> None:
+    def set_activity_tracker(self, tracker: ActivityTracker) -> None:
+        self._activity_tracker = tracker
+
+    def update_state(self, text: str, color: Optional[str] = None) -> None:
         self._state_text.value = text
         if color:
             self._state_dot.color = color
         self._safe_update(self._state_text)
         self._safe_update(self._state_dot)
 
-    def update_system(self, text: str) -> None:
-        self._system_item.set_value(text)
+    def refresh_system(self) -> None:
+        self._refresh_system_kpi()
 
-    def update_thread_panel(self, activity: dict[str, str]) -> None:
+    def update_thread_panel(self, log_activity: dict[str, str]) -> None:
+        """Rebuild thread rows using live threads + ActivityTracker data."""
         colors = self._theme.colors
         typo = self._theme.typography
+        tracker_data = self._activity_tracker.get_all() if self._activity_tracker else {}
         rows = []
 
-        live_names = {t.name for t in threading.enumerate()}
         for t in threading.enumerate():
-            last_msg = activity.get(t.name, "")
-            daemon_tag = " [D]" if t.daemon else ""
-            desc = _describe_thread(t.name)
-            rows.append(
-                ft.Column(
-                    controls=[
-                        ft.Text(
-                            f"● {t.name}{daemon_tag} — {desc}",
-                            size=typo.font_size_xs,
-                            color=colors.accent,
-                        ),
-                        ft.Text(
-                            last_msg if last_msg else "—",
-                            size=typo.font_size_xs,
-                            color=colors.text_muted,
-                        ),
-                    ],
-                    spacing=1,
-                )
-            )
+            role = _thread_role(t.name)
+            daemon_badge = " [D]" if t.daemon else ""
+            tracker_entry = tracker_data.get(t.name)
+            activity_line = tracker_entry.summary if tracker_entry else log_activity.get(t.name, "—")
 
-        self._thread_list_col.controls = rows
+            rows.append(ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.Icon(ft.Icons.CIRCLE, size=6, color=colors.accent),
+                            ft.Text(
+                                f"{t.name}{daemon_badge}",
+                                size=typo.font_size_xs,
+                                color=colors.text_dim,
+                                weight=ft.FontWeight.BOLD,
+                            ),
+                            ft.Container(expand=True),
+                            ft.Text(role, size=typo.font_size_xs, color=colors.text_muted),
+                        ],
+                        spacing=4,
+                    ),
+                    ft.Text(
+                        activity_line,
+                        size=typo.font_size_xs,
+                        color=colors.text_muted,
+                    ),
+                ],
+                spacing=1,
+            ))
+
+        self._thread_col.controls = rows
         self._threads_item.set_value(str(threading.active_count()))
-        self._safe_update(self._thread_list_col)
+        self._safe_update(self._thread_col)
 
-    def update_queue_count(self, count: int) -> None:
-        self._queue_item.set_value(str(count))
-
+    # Queue delegation (keeps widget_controller API stable)
     def reset_chunks(self) -> None:
-        self._chunk_rows.clear()
-        self._queue_col.controls.clear()
-        self._safe_update(self._queue_col)
+        self.queue.reset()
 
     def update_chunk_status(self, index: int, status: str, name: str = "") -> None:
-        if index not in self._chunk_rows:
-            row = QueueChunkRow(self._theme, index, name)
-            self._chunk_rows[index] = row
-            self._queue_col.controls.append(row)
-            self._safe_update(self._queue_col)
-        self._chunk_rows[index].update_status(status, name)
-        self.update_queue_count(len(self._chunk_rows))
+        self.queue.update_chunk_status(index, status, name)
 
     def update_chunk_progress(self, index: int, current_ms: float, total_ms: float) -> None:
-        if index in self._chunk_rows:
-            self._chunk_rows[index].update_progress(current_ms, total_ms)
+        self.queue.update_chunk_progress(index, current_ms, total_ms)
 
-    def _build_system_details(self) -> ft.Control:
-        colors = self._theme.colors
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _refresh_system_kpi(self) -> None:
         try:
             proc = psutil.Process(os.getpid())
             mem = proc.memory_info()
-            rss_mb = mem.rss / (1024 * 1024)
-            vms_mb = mem.vms / (1024 * 1024)
-            lines = [
-                f"RSS: {rss_mb:.1f} MB",
-                f"VMS: {vms_mb:.1f} MB",
-                f"PID: {os.getpid()}",
-                f"Threads: {threading.active_count()}",
-            ]
-            summary = f"{rss_mb:.0f} MB"
+            self._kpi.refresh(
+                rss_mb=mem.rss / (1024 * 1024),
+                vms_mb=mem.vms / (1024 * 1024),
+                pid=os.getpid(),
+                threads=threading.active_count(),
+            )
         except Exception:
-            lines = ["Unavailable"]
-            summary = "—"
-
-        self._system_item.set_value(summary)
-        return ft.Column(
-            controls=[
-                ft.Text(line, size=self._theme.typography.font_size_xs, color=colors.text_dim)
-                for line in lines
-            ],
-            spacing=2,
-        )
+            pass
 
     def _safe_update(self, control: ft.Control) -> None:
         try:

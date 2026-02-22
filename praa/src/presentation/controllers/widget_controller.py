@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from src.domain.audio.service import AudioService
-from src.domain.config.models import AppConfig
+from src.domain.config.models import AppConfig, LanguagePreference
 from src.domain.config.theme_config import ThemeConfig
 from src.domain.session.service import SessionService
 from src.domain.widget.interpolator import WordBoundaryInterpolator
@@ -14,6 +14,7 @@ from src.domain.widget.spectrum import SpectrumAnalyzer
 from src.domain.widget.state import PlaybackState, PlaybackStateManager
 from src.domain.widget.sync import SyncController
 from src.domain.widget.time_provider import CalibratedTimeProvider
+from src.infrastructure.activity_tracker import ActivityTracker
 from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import (
     HotkeyAction,
@@ -30,10 +31,12 @@ from src.infrastructure.events import (
     TrayActionType,
 )
 from src.presentation.app import FletApp
+from src.presentation.controllers.playback_controller import PlaybackController
 
 logger = logging.getLogger(__name__)
 
-_THREAD_REFRESH_TICKS = 40  # refresh every ~2s at 50ms tick rate
+_THREAD_REFRESH_TICKS = 40   # ~2 s at 50 ms tick
+_SYSTEM_REFRESH_TICKS  = 100  # ~5 s
 
 
 class WidgetController:
@@ -45,6 +48,8 @@ class WidgetController:
         loop: asyncio.AbstractEventLoop,
         session_service: SessionService,
         audio_service: Optional[AudioService] = None,
+        config_service=None,
+        activity_tracker: Optional[ActivityTracker] = None,
     ):
         self._config = config
         self._theme = theme
@@ -52,10 +57,13 @@ class WidgetController:
         self._loop = loop
         self._session_service = session_service
         self._audio_service = audio_service
+        self._config_service = config_service
+        self._activity_tracker = activity_tracker or ActivityTracker()
 
         self._state_manager = PlaybackStateManager()
         self._spectrum = SpectrumAnalyzer(num_bands=theme.dimensions.spectrum_bar_count)
         self._interpolator = WordBoundaryInterpolator()
+        self._playback_controller = PlaybackController(event_bus, self._state_manager)
         self._log_handler = None
         self._tick_count = 0
         self._current_playing_chunk = 0
@@ -83,8 +91,15 @@ class WidgetController:
 
         self._app = FletApp(
             theme=theme,
+            config=config,
             get_sessions=self._get_sessions,
             on_load_session=self._load_session,
+            on_toggle_play=self._handle_toggle_play,
+            on_settings_voice=self._handle_voice_change,
+            on_settings_language=self._handle_language_change,
+            on_play_chunk=self._handle_play_chunk,
+            on_pause_chunk=self._handle_pause_chunk,
+            on_seek_chunk=self._handle_seek_chunk,
         )
 
     @property
@@ -95,10 +110,13 @@ class WidgetController:
         self._log_handler = handler
         if self._app.debug:
             self._app.debug.set_log_handler(handler)
+        if self._activity_tracker and self._app.debug:
+            self._app.debug.set_activity_tracker(self._activity_tracker)
 
     def start(self) -> None:
         self._running = True
         self._ui_task = self._loop.create_task(self._ui_loop())
+        self._activity_tracker.report("WidgetController", "Idle", "Waiting for input")
 
     def stop(self) -> None:
         self._running = False
@@ -114,12 +132,17 @@ class WidgetController:
     def hide(self) -> None:
         self._app.hide()
 
+    # ------------------------------------------------------------------
+    # Event handlers
+    # ------------------------------------------------------------------
+
     async def on_hotkey_pressed(self, event: HotkeyPressed) -> None:
         if event.action == HotkeyAction.READ:
             self.show()
 
     async def on_text_captured(self, event: TextCaptured) -> None:
         logger.info("Text captured: %d chars", len(event.raw_text))
+        self._activity_tracker.report("WidgetController", "Processing", "Text captured")
 
         if self._sync_controller:
             self._sync_controller.reset()
@@ -134,11 +157,12 @@ class WidgetController:
         self._audio_paths.clear()
         self._state_manager.start_processing(total_chunks=0)
 
-        # Show milestone loading state (no auto-expand)
+        # Show processing phase (no auto-expand)
         if self._app.compact_milestone:
             self._app.compact_milestone.reset()
         self._app.set_phase("processing")
         self._app.advance_milestone(0, "Reading clipboard…")
+        self._app.reset_queue()
 
         self._schedule_ui_update()
 
@@ -146,29 +170,24 @@ class WidgetController:
         self._text_chunks = list(event.chunks)
         self._chunk_statuses.clear()
         n = len(event.chunks)
+        self._activity_tracker.report("WidgetController", "Processing", f"Synthesizing {n} chunks")
 
-        # Milestone: steps 0+1 done, now synthesizing
         self._app.advance_milestone(2, f"0 / {n} chunks")
+        self._app.setup_queue(n)
 
         if self._app.home and self._app.home.transcript:
             self._app.home.transcript.set_content(self._text_chunks)
+        self._playback_controller.set_transcript(self._transcript_text)
 
-        if self._app.debug:
-            self._app.debug.reset_chunks()
-            for i, chunk in enumerate(event.chunks):
-                name = chunk.strip().replace("\n", " ")[:30] + ("…" if len(chunk) > 30 else "")
-                self._app.debug.update_chunk_status(i, "pending", name)
-                self._chunk_statuses[i] = "pending"
-
-        if self._app.chunk_progress:
-            self._app.chunk_progress.setup(n)
+        for i, chunk in enumerate(event.chunks):
+            name = chunk.strip().replace("\n", " ")[:30] + ("…" if len(chunk) > 30 else "")
+            self._app.update_queue_status(i, "pending", name)
+            self._chunk_statuses[i] = "pending"
 
     async def on_synthesis_started(self, event: SynthesisStarted) -> None:
         self._total_chunks = event.total_chunks
         self._chunk_statuses[event.chunk_index] = "processing"
-
-        if self._app.debug:
-            self._app.debug.update_chunk_status(event.chunk_index, "processing")
+        self._app.update_queue_status(event.chunk_index, "processing")
 
         if self._state_manager.state == PlaybackState.IDLE:
             self._state_manager.start_processing(event.total_chunks)
@@ -188,10 +207,7 @@ class WidgetController:
             enhanced = calculate_text_offsets(event.chunk_text, interpolated)
             self._sync_controller.load_boundaries(event.chunk_index, enhanced)
 
-        if self._app.debug:
-            self._app.debug.update_chunk_status(event.chunk_index, "ready")
-
-        # Update milestone synthesis detail
+        self._app.update_queue_status(event.chunk_index, "ready")
         self._app.update_milestone_detail(
             2, f"{self._synthesis_complete_count} / {event.total_chunks} chunks"
         )
@@ -206,20 +222,15 @@ class WidgetController:
     async def on_playback_started(self, event: PlaybackStarted) -> None:
         self._state_manager.start_playback(event.chunk_index)
         self._current_playing_chunk = event.chunk_index
+        self._activity_tracker.report(
+            "WidgetController", "Playing", f"Chunk {event.chunk_index + 1}/{event.total_chunks}"
+        )
 
         if event.chunk_index > 0:
             self._chunk_statuses[event.chunk_index - 1] = "done"
+            self._app.update_queue_status(event.chunk_index - 1, "done")
         self._chunk_statuses[event.chunk_index] = "playing"
-
-        if self._app.debug:
-            if event.chunk_index > 0:
-                self._app.debug.update_chunk_status(event.chunk_index - 1, "done")
-            self._app.debug.update_chunk_status(event.chunk_index, "playing")
-
-        if self._app.chunk_progress:
-            if event.chunk_index > 0:
-                self._app.chunk_progress.update_status(event.chunk_index - 1, "done")
-            self._app.chunk_progress.update_status(event.chunk_index, "playing")
+        self._app.update_queue_status(event.chunk_index, "playing")
 
         # Milestone complete → switch to playing phase
         self._app.complete_milestone()
@@ -239,15 +250,22 @@ class WidgetController:
     async def on_playback_paused(self, event: PlaybackPaused) -> None:
         self._state_manager.pause_playback()
         self._spectrum.set_active(False)
+        self._activity_tracker.report("WidgetController", "Paused")
+        if self._app.compact_bar:
+            self._app.compact_bar.set_play_icon(False)
         self._schedule_ui_update()
 
     async def on_playback_resumed(self, event: PlaybackResumed) -> None:
         self._state_manager.resume_playback()
         self._spectrum.set_active(True)
+        self._activity_tracker.report(
+            "WidgetController", "Playing", f"Chunk {self._current_playing_chunk + 1}"
+        )
         self._schedule_ui_update()
 
     async def on_playback_stopped(self, event: PlaybackStopped) -> None:
         self._spectrum.set_active(False)
+        self._activity_tracker.report("WidgetController", "Idle", "Playback stopped")
 
         if self._sync_controller:
             self._sync_controller.clear_highlight()
@@ -270,6 +288,44 @@ class WidgetController:
             elif event.value == "silent":
                 self.hide()
 
+    # ------------------------------------------------------------------
+    # Playback control callbacks (from UI buttons)
+    # ------------------------------------------------------------------
+
+    def _handle_toggle_play(self) -> None:
+        self._playback_controller.toggle_play(self._publish_event)
+
+    def _handle_play_chunk(self, chunk_index: int) -> None:
+        if not self._audio_service or not self._audio_paths:
+            return
+        if chunk_index >= len(self._audio_paths):
+            return
+        self._audio_service.play_from_chunk(chunk_index, self._audio_paths)
+
+    def _handle_pause_chunk(self, chunk_index: int) -> None:
+        # Pause current playback regardless of which chunk triggered it
+        self._publish_event(TrayAction(action=TrayActionType.PAUSE))
+
+    def _handle_seek_chunk(self, chunk_index: int) -> None:
+        """Seek to a chunk by clicking the timeline."""
+        self._handle_play_chunk(chunk_index)
+
+    def _handle_voice_change(self, voice_id: str) -> None:
+        self._publish_event(TrayAction(action=TrayActionType.CHANGE_VOICE, value=voice_id))
+
+    def _handle_language_change(self, lang_code: str) -> None:
+        if self._config_service:
+            asyncio.run_coroutine_threadsafe(
+                self._config_service.update(
+                    "language_preference", LanguagePreference(lang_code)
+                ),
+                self._loop,
+            )
+
+    # ------------------------------------------------------------------
+    # Word sync callback
+    # ------------------------------------------------------------------
+
     def _on_highlight_word(self, chunk_idx: int, start_char: int, end_char: int) -> None:
         if self._app.home and self._app.home.transcript:
             self._app.home.transcript.highlight_relative(chunk_idx, start_char, end_char)
@@ -288,6 +344,10 @@ class WidgetController:
         if self._app.debug:
             self._app.debug.update_state(state_info.status_text, state_info.status_color)
 
+    # ------------------------------------------------------------------
+    # UI loop
+    # ------------------------------------------------------------------
+
     async def _ui_loop(self) -> None:
         while self._running:
             try:
@@ -300,21 +360,18 @@ class WidgetController:
                     bars = self._spectrum.update(block, self._audio_service.samplerate)
                 else:
                     bars = self._spectrum.update(None)
-
                 self._app.update_spectra(bars)
 
                 # Word sync
                 if is_playing and self._sync_controller:
                     self._sync_controller.tick()
 
-                # Queue chunk progress
-                if is_playing and self._audio_service and self._app.debug:
+                # Queue + timeline progress
+                if is_playing and self._audio_service:
                     pos = self._audio_service.position_ms
                     dur = self._audio_service.duration_ms
                     if dur > 0:
-                        self._app.debug.update_chunk_progress(
-                            self._current_playing_chunk, pos, dur
-                        )
+                        self._app.update_queue_progress(self._current_playing_chunk, pos, dur)
 
                 # Time display
                 if is_playing and self._audio_service and self._app.home:
@@ -324,16 +381,18 @@ class WidgetController:
                         s = int(pos / 1000) % 60
                         self._app.home.transcript.set_time(f"{m}:{s:02d}")
 
-                # Per-thread activity refresh (every ~2s)
+                # Thread activity + system KPI refresh
                 if self._tick_count % _THREAD_REFRESH_TICKS == 0 and self._app.debug:
-                    activity = (
+                    log_act = (
                         self._log_handler.get_thread_activity()
-                        if self._log_handler
-                        else {}
+                        if self._log_handler else {}
                     )
-                    self._app.debug.update_thread_panel(activity)
+                    self._app.debug.update_thread_panel(log_act)
 
-                # Drain log entries into log page
+                if self._tick_count % _SYSTEM_REFRESH_TICKS == 0 and self._app.debug:
+                    self._app.debug.refresh_system()
+
+                # Log drain → log page
                 if self._log_handler and self._app.logs:
                     for entry in self._log_handler.drain_new_entries():
                         self._app.logs.append(entry)
@@ -342,6 +401,10 @@ class WidgetController:
                 logger.debug("UI loop error: %s", e)
 
             await asyncio.sleep(0.05)
+
+    # ------------------------------------------------------------------
+    # Session helpers
+    # ------------------------------------------------------------------
 
     def _get_sessions(self):
         return self._session_service.get_recent_sessions()

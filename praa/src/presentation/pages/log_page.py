@@ -38,7 +38,7 @@ class LogPage(ft.Container):
                     weight=ft.FontWeight.BOLD,
                 ),
                 ft.IconButton(
-                    icon=ft.Icons.CLEAR_ALL,
+                    icon=ft.Icons.DELETE_OUTLINE,
                     icon_size=14,
                     icon_color=theme.colors.text_muted,
                     tooltip="Clear logs",

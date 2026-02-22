@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from typing import Callable, Optional
 
 import flet as ft
 
+from src.domain.config.models import AppConfig
 from src.domain.config.theme_config import ThemeConfig
 from src.presentation.components.compact_bar_component import CompactBarComponent
 from src.presentation.components.compact_milestone_bar import CompactMilestoneBar
@@ -25,33 +27,48 @@ class FletApp:
     def __init__(
         self,
         theme: ThemeConfig,
+        config: Optional[AppConfig] = None,
         get_sessions=None,
         on_load_session=None,
+        on_toggle_play: Optional[Callable] = None,
+        on_settings_voice: Optional[Callable[[str], None]] = None,
+        on_settings_language: Optional[Callable[[str], None]] = None,
+        on_play_chunk: Optional[Callable[[int], None]] = None,
+        on_pause_chunk: Optional[Callable[[int], None]] = None,
+        on_seek_chunk: Optional[Callable[[int], None]] = None,
     ):
         self._theme = theme
+        self._config = config
         self._get_sessions = get_sessions
         self._on_load_session = on_load_session
-        self._page: ft.Page | None = None
+        self._on_toggle_play = on_toggle_play
+        self._on_settings_voice = on_settings_voice
+        self._on_settings_language = on_settings_language
+        self._on_play_chunk = on_play_chunk
+        self._on_pause_chunk = on_pause_chunk
+        self._on_seek_chunk = on_seek_chunk
+
+        self._page: Optional[ft.Page] = None
         self._expanded = False
         self._phase = "idle"          # "idle" | "processing" | "playing"
-        self._nav: NavigationController | None = None
+        self._nav: Optional[NavigationController] = None
 
         # Singleton controls created in setup()
-        self.compact_milestone: CompactMilestoneBar | None = None
-        self.bar_spectrum: SpectrumComponent | None = None        # lives in bar center
-        self._home_spectrum: SpectrumComponent | None = None     # lives in expanded home
+        self.compact_milestone: Optional[CompactMilestoneBar] = None
+        self.bar_spectrum: Optional[SpectrumComponent] = None
+        self._home_spectrum: Optional[SpectrumComponent] = None
 
-        self.home: HomePage | None = None
-        self.debug: DebugPage | None = None
-        self.history: HistoryPage | None = None
-        self.logs: LogPage | None = None
-        self.compact_bar: CompactBarComponent | None = None
-        self.chunk_progress: ChunkProgressComponent | None = None
+        self.home: Optional[HomePage] = None
+        self.debug: Optional[DebugPage] = None
+        self.history: Optional[HistoryPage] = None
+        self.logs: Optional[LogPage] = None
+        self.compact_bar: Optional[CompactBarComponent] = None
+        self.chunk_progress: Optional[ChunkProgressComponent] = None
 
-        self._content_area: ft.Container | None = None
-        self._nav_bar: ft.Row | None = None
+        self._content_area: Optional[ft.Container] = None
+        self._nav_bar: Optional[ft.Row] = None
         self._nav_buttons: dict[ViewType, ft.Container] = {}
-        self._expanded_panel: ft.Column | None = None
+        self._expanded_panel: Optional[ft.Column] = None
 
     def setup(self, page: ft.Page) -> None:
         self._page = page
@@ -67,13 +84,23 @@ class FletApp:
         page.padding = 0
         page.spacing = 0
 
-        # Create singleton content controls
+        # Singleton content controls
         self.compact_milestone = CompactMilestoneBar(self._theme)
         self.bar_spectrum = SpectrumComponent(self._theme, height=_BAR_SPECTRUM_HEIGHT)
         self._home_spectrum = SpectrumComponent(self._theme, height=_HOME_SPECTRUM_HEIGHT)
 
-        self.home = HomePage(self._theme, home_spectrum=self._home_spectrum)
-        self.debug = DebugPage(self._theme)
+        self.home = HomePage(
+            self._theme,
+            home_spectrum=self._home_spectrum,
+            on_play_chunk=self._on_play_chunk,
+            on_pause_chunk=self._on_pause_chunk,
+            on_seek_chunk=self._on_seek_chunk,
+        )
+        self.debug = DebugPage(
+            self._theme,
+            on_play_chunk=self._on_play_chunk,
+            on_pause_chunk=self._on_pause_chunk,
+        )
         self.history = HistoryPage(
             self._theme,
             get_sessions=self._get_sessions,
@@ -84,6 +111,8 @@ class FletApp:
         self.compact_bar = CompactBarComponent(
             self._theme,
             on_toggle_expand=self._toggle_expand,
+            on_toggle_play=self._on_toggle_play,
+            on_settings=self._open_settings,
             on_close=self._on_close,
         )
         self.chunk_progress = ChunkProgressComponent(self._theme)
@@ -105,7 +134,6 @@ class FletApp:
         self._expanded_panel = ft.Column(
             controls=[
                 self._nav_bar,
-                self.chunk_progress,
                 self._content_area,
             ],
             spacing=2,
@@ -132,7 +160,7 @@ class FletApp:
         page.add(root)
 
     # ----------------------------------------------------------------
-    # Phase management — drives bar center and expanded home content
+    # Phase management
     # ----------------------------------------------------------------
 
     def set_phase(self, phase: str) -> None:
@@ -164,6 +192,38 @@ class FletApp:
             self._home_spectrum.update_bars(bars)
 
     # ----------------------------------------------------------------
+    # Queue / Timeline passthrough
+    # ----------------------------------------------------------------
+
+    def setup_queue(self, n_chunks: int) -> None:
+        if self.home:
+            self.home.queue.setup(n_chunks)
+            self.home.timeline.setup(n_chunks)
+        if self.debug:
+            self.debug.queue.setup(n_chunks)
+
+    def update_queue_status(self, index: int, status: str, name: str = "") -> None:
+        if self.home:
+            self.home.queue.update_chunk_status(index, status, name)
+            self.home.timeline.update_chunk_status(index, status)
+        if self.debug:
+            self.debug.update_chunk_status(index, status, name)
+
+    def update_queue_progress(self, index: int, current_ms: float, total_ms: float) -> None:
+        if self.home:
+            self.home.queue.update_chunk_progress(index, current_ms, total_ms)
+            self.home.timeline.update_playback(index, current_ms, total_ms)
+        if self.debug:
+            self.debug.update_chunk_progress(index, current_ms, total_ms)
+
+    def reset_queue(self) -> None:
+        if self.home:
+            self.home.queue.reset()
+            self.home.timeline.reset()
+        if self.debug:
+            self.debug.reset_chunks()
+
+    # ----------------------------------------------------------------
     # Expand / Collapse
     # ----------------------------------------------------------------
 
@@ -171,7 +231,6 @@ class FletApp:
         if self._expanded:
             return
         self._expanded = True
-        # Clear bar center — content moves to expanded view
         if self.compact_bar:
             self.compact_bar.set_bar_content(None)
             self.compact_bar.set_expand_icon(True)
@@ -211,7 +270,6 @@ class FletApp:
         if not self.compact_bar:
             return
         if self._expanded:
-            # When expanded, bar center is always empty — content is in expanded view
             self.compact_bar.set_bar_content(None)
             return
         if self._phase == "processing":
@@ -246,6 +304,93 @@ class FletApp:
         if self._page:
             self._page.window.visible = False
             self._page.update()
+
+    def _open_settings(self) -> None:
+        if not self._page or not self._config:
+            return
+        colors = self._theme.colors
+        typo = self._theme.typography
+
+        from src.domain.config.voices_config import VOICE_CATALOG, LANGUAGE_OPTIONS
+
+        def voice_tile(v) -> ft.ListTile:
+            selected = (
+                (v.language_code == "id" and v.voice_id == self._config.voice_id)
+                or (v.language_code == "en" and v.voice_id == self._config.voice_en)
+            )
+            return ft.ListTile(
+                leading=ft.Icon(
+                    ft.Icons.RADIO_BUTTON_ON if selected else ft.Icons.RADIO_BUTTON_OFF,
+                    color=colors.accent if selected else colors.text_muted,
+                    size=14,
+                ),
+                title=ft.Text(
+                    v.display_label,
+                    size=typo.font_size_sm,
+                    color=colors.text_primary if selected else colors.text_dim,
+                ),
+                subtitle=ft.Text(v.gender_label, size=typo.font_size_xs, color=colors.text_muted),
+                dense=True,
+                on_click=lambda _, vid=v.voice_id: self._handle_voice(vid),
+            )
+
+        def lang_tile(lang) -> ft.ListTile:
+            selected = self._config.language_preference.value == lang.code
+            return ft.ListTile(
+                leading=ft.Icon(
+                    ft.Icons.RADIO_BUTTON_ON if selected else ft.Icons.RADIO_BUTTON_OFF,
+                    color=colors.accent if selected else colors.text_muted,
+                    size=14,
+                ),
+                title=ft.Text(
+                    lang.label,
+                    size=typo.font_size_sm,
+                    color=colors.text_primary if selected else colors.text_dim,
+                ),
+                dense=True,
+                on_click=lambda _, lc=lang.code: self._handle_language(lc),
+            )
+
+        def section_hdr(text: str) -> ft.Container:
+            return ft.Container(
+                content=ft.Text(text, size=typo.font_size_xs, color=colors.text_muted, weight=ft.FontWeight.BOLD),
+                padding=ft.padding.only(left=8, top=8, bottom=2),
+            )
+
+        content = ft.Column(
+            controls=[
+                section_hdr("Voice Model"),
+                *[voice_tile(v) for v in VOICE_CATALOG],
+                ft.Divider(height=1, color=colors.border_subtle),
+                section_hdr("Language"),
+                *[lang_tile(l) for l in LANGUAGE_OPTIONS],
+            ],
+            spacing=0,
+            tight=True,
+            scroll=ft.ScrollMode.AUTO,
+            width=300,
+        )
+
+        self._settings_dlg = ft.AlertDialog(
+            modal=False,
+            bgcolor=colors.bg_panel,
+            title=ft.Text("Settings", size=typo.font_size_sm, color=colors.text_primary, weight=ft.FontWeight.BOLD),
+            content=content,
+            actions=[ft.TextButton("Close", on_click=lambda _: self._page.close(self._settings_dlg), style=ft.ButtonStyle(color=colors.accent))],
+        )
+        self._page.open(self._settings_dlg)
+
+    def _handle_voice(self, voice_id: str) -> None:
+        if self._on_settings_voice:
+            self._on_settings_voice(voice_id)
+        if hasattr(self, "_settings_dlg") and self._page:
+            self._page.close(self._settings_dlg)
+
+    def _handle_language(self, lang_code: str) -> None:
+        if self._on_settings_language:
+            self._on_settings_language(lang_code)
+        if hasattr(self, "_settings_dlg") and self._page:
+            self._page.close(self._settings_dlg)
 
     def _nav_btn(
         self, label: str, icon, view: ViewType, selected: bool = False

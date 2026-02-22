@@ -15,35 +15,39 @@ logger = logging.getLogger(__name__)
 class ChunkData:
     index: int
     text: str
-    char_offset: int
-
-    @property
-    def char_end(self) -> int:
-        return self.char_offset + len(self.text)
 
 
 class TranscriptComponent(ft.Container):
-    def __init__(self, theme: ThemeConfig, on_copy: Optional[callable] = None, **kwargs):
+    """Transcript display with per-chunk ListView items, word highlighting, and auto-scroll.
+
+    Each chunk is a separate ft.Text keyed by "chunk_{idx}".
+    highlight_relative() updates only the active chunk's spans and calls
+    list.scroll_to(key=...) to keep the spoken word in view automatically.
+    """
+
+    def __init__(
+        self,
+        theme: ThemeConfig,
+        on_copy: Optional[callable] = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._theme = theme
         self._on_copy = on_copy
         self._chunks: dict[int, ChunkData] = {}
+        self._chunk_texts: dict[int, ft.Text] = {}
         self._full_text = ""
-        self._word_spans: list[ft.TextSpan] = []
-        self._text_control = ft.Text(
-            selectable=True,
-            size=theme.typography.font_size_md,
-            color=theme.colors.text_dim,
-        )
+        self._prev_highlight_chunk = -1
+
         self._copy_btn = ft.IconButton(
             icon=ft.Icons.COPY,
             icon_size=14,
-            icon_color=self._theme.colors.text_muted,
+            icon_color=theme.colors.text_muted,
             tooltip="Copy transcript",
             on_click=self._handle_copy,
         )
         self._time_label = ft.Text(
-            value="00:00",
+            value="0:00",
             size=theme.typography.font_size_sm,
             color=theme.colors.text_muted,
         )
@@ -52,130 +56,153 @@ class TranscriptComponent(ft.Container):
             controls=[
                 ft.Text(
                     "Transcript",
-                    size=self._theme.typography.font_size_sm,
-                    color=self._theme.colors.text_muted,
+                    size=theme.typography.font_size_sm,
+                    color=theme.colors.text_muted,
                     weight=ft.FontWeight.BOLD,
                 ),
-                ft.Row(
-                    controls=[self._time_label, self._copy_btn],
-                    spacing=4,
-                ),
+                ft.Row(controls=[self._time_label, self._copy_btn], spacing=4),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
         )
-        self._scroll_col = ft.Column(
-            controls=[self._text_control],
-            scroll=ft.ScrollMode.AUTO,
+
+        self._list = ft.ListView(
+            spacing=8,
+            auto_scroll=False,
             expand=True,
         )
-        
+
         self.content = ft.Column(
-            controls=[header, self._scroll_col],
+            controls=[header, self._list],
             spacing=4,
             expand=True,
         )
-        self.bgcolor = self._theme.colors.bg_surface
+        self.bgcolor = theme.colors.bg_surface
         self.border_radius = 8
         self.padding = ft.padding.all(8)
         self.expand = True
 
-    def set_content(self, chunks: list[str]):
-        chunk_data = []
-        offset = 0
-        for idx, text in enumerate(chunks):
-            chunk_data.append(ChunkData(index=idx, text=text, char_offset=offset))
-            offset += len(text) + 2
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
-        self._chunks = {c.index: c for c in chunk_data}
+    def set_content(self, chunks: list[str]) -> None:
+        self._chunks = {i: ChunkData(index=i, text=text) for i, text in enumerate(chunks)}
         self._full_text = "\n\n".join(chunks)
-        self._rebuild_spans()
+        self._prev_highlight_chunk = -1
+        self._rebuild_list()
         logger.info("Transcript loaded: %d chunks, %d chars", len(chunks), len(self._full_text))
 
-    def clear_content(self):
+    def clear_content(self) -> None:
         self._chunks.clear()
+        self._chunk_texts.clear()
         self._full_text = ""
-        self._text_control.spans = []
-        self._text_control.value = ""
-        self._safe_update(self._text_control)
+        self._prev_highlight_chunk = -1
+        self._list.controls.clear()
+        self._safe_update(self._list)
 
-    def highlight_relative(self, chunk_idx: int, start: int, end: int):
+    def highlight_relative(self, chunk_idx: int, start: int, end: int) -> None:
         if chunk_idx not in self._chunks:
             return
-        chunk = self._chunks[chunk_idx]
-        abs_start = chunk.char_offset + start
-        abs_end = chunk.char_offset + end
-        self._rebuild_spans(highlight_start=abs_start, highlight_end=abs_end)
 
-    def clear_highlight(self):
-        self._rebuild_spans()
+        # Clear previous chunk highlight when transitioning chunks
+        if self._prev_highlight_chunk != chunk_idx and self._prev_highlight_chunk >= 0:
+            self._reset_chunk_to_spoken(self._prev_highlight_chunk)
+
+        chunk = self._chunks[chunk_idx]
+        text = chunk.text
+        colors = self._theme.colors
+        spans: list[ft.TextSpan] = []
+
+        if start > 0:
+            spans.append(ft.TextSpan(
+                text=text[:start],
+                style=ft.TextStyle(color=colors.highlight_spoken),
+            ))
+        spans.append(ft.TextSpan(
+            text=text[start:end],
+            style=ft.TextStyle(
+                color=colors.highlight_active,
+                bgcolor=colors.bg_input,
+                weight=ft.FontWeight.BOLD,
+            ),
+        ))
+        if end < len(text):
+            spans.append(ft.TextSpan(
+                text=text[end:],
+                style=ft.TextStyle(color=colors.highlight_unspoken),
+            ))
+
+        ctrl = self._chunk_texts.get(chunk_idx)
+        if ctrl:
+            ctrl.value = None
+            ctrl.spans = spans
+            self._safe_update(ctrl)
+
+        # Auto-scroll to keep the active chunk visible
+        try:
+            self._list.scroll_to(key=f"chunk_{chunk_idx}", duration=300)
+        except Exception:
+            pass
+
+        self._prev_highlight_chunk = chunk_idx
+
+    def clear_highlight(self) -> None:
+        if self._prev_highlight_chunk >= 0:
+            self._reset_chunk_to_spoken(self._prev_highlight_chunk)
+        self._prev_highlight_chunk = -1
 
     def get_text(self) -> str:
         return self._full_text
 
-    def get_chunk(self, chunk_idx: int) -> Optional[ChunkData]:
-        return self._chunks.get(chunk_idx)
-
-    def get_chunk_offset(self, chunk_idx: int) -> int:
-        chunk = self._chunks.get(chunk_idx)
-        return chunk.char_offset if chunk else 0
+    def set_time(self, text: str) -> None:
+        self._time_label.value = text
+        self._safe_update(self._time_label)
 
     @property
     def chunk_count(self) -> int:
         return len(self._chunks)
 
-    def set_time(self, text: str):
-        self._time_label.value = text
-        self._safe_update(self._time_label)
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
 
-    def _rebuild_spans(self, highlight_start: int = -1, highlight_end: int = -1):
-        if not self._full_text:
-            self._text_control.spans = []
-            self._text_control.value = ""
-            self._safe_update(self._text_control)
-            return
-
+    def _rebuild_list(self) -> None:
         colors = self._theme.colors
-        spans = []
+        self._chunk_texts.clear()
+        self._list.controls.clear()
 
-        if highlight_start >= 0 and highlight_end > highlight_start:
-            # Type ignore since Pyre is confusing python slicing here
-            before = self._full_text[: int(highlight_start)] # type: ignore
-            active = self._full_text[int(highlight_start) : int(highlight_end)] # type: ignore
-            after = self._full_text[int(highlight_end) :] # type: ignore
-
-            if before:
-                spans.append(ft.TextSpan(
-                    text=before,
-                    style=ft.TextStyle(color=colors.highlight_spoken),
-                ))
-            spans.append(ft.TextSpan(
-                text=active,
-                style=ft.TextStyle(
-                    color=colors.highlight_active,
-                    bgcolor=colors.bg_input,
-                    weight=ft.FontWeight.BOLD,
-                ),
-            ))
-            if after:
-                spans.append(ft.TextSpan(
-                    text=after,
+        for i, chunk in self._chunks.items():
+            ctrl = ft.Text(
+                value=None,
+                key=f"chunk_{i}",
+                spans=[ft.TextSpan(
+                    text=chunk.text,
                     style=ft.TextStyle(color=colors.highlight_unspoken),
-                ))
-        else:
-            spans.append(ft.TextSpan(
-                text=self._full_text,
-                style=ft.TextStyle(color=colors.highlight_unspoken),
-            ))
+                )],
+                size=self._theme.typography.font_size_md,
+                selectable=True,
+            )
+            self._chunk_texts[i] = ctrl
+            self._list.controls.append(ctrl)
 
-        self._text_control.value = None
-        self._text_control.spans = spans
-        self._safe_update(self._text_control)
+        self._safe_update(self._list)
 
-    def _handle_copy(self, e):
+    def _reset_chunk_to_spoken(self, chunk_idx: int) -> None:
+        chunk = self._chunks.get(chunk_idx)
+        ctrl = self._chunk_texts.get(chunk_idx)
+        if chunk and ctrl:
+            ctrl.value = None
+            ctrl.spans = [ft.TextSpan(
+                text=chunk.text,
+                style=ft.TextStyle(color=self._theme.colors.highlight_spoken),
+            )]
+            self._safe_update(ctrl)
+
+    def _handle_copy(self, _e=None) -> None:
         if self._on_copy and self._full_text:
             self._on_copy(self._full_text)
 
-    def _safe_update(self, control):
+    def _safe_update(self, control) -> None:
         try:
             control.update()
         except Exception:
