@@ -170,6 +170,9 @@ class SyncController:
     # PUBLIC API: Synchronization
     # ----------------------------------------------------------------
     
+    def tick(self) -> bool:
+        return self.update_sync()
+
     def update_sync(self) -> bool:
         """
         Update word highlight based on current playback position.

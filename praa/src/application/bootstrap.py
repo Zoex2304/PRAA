@@ -21,6 +21,7 @@ from src.domain.session.service import SessionService
 from src.infrastructure.database import DatabaseManager
 from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import AppShutdown, AppStarted, TrayAction, TrayActionType
+from src.infrastructure.flet_log_handler import FletLogHandler
 from src.infrastructure.logging import setup_logging
 from src.presentation.controllers.widget_controller import WidgetController
 
@@ -48,6 +49,7 @@ class Application:
         self._orchestrator: Orchestrator | None = None
         self._db_manager: DatabaseManager | None = None
         self._session_service: SessionService | None = None
+        self._log_handler: FletLogHandler | None = None
 
     def _init_services(self, loop: asyncio.AbstractEventLoop) -> None:
         config = self._config
@@ -93,11 +95,16 @@ class Application:
 
     async def _flet_main(self, page: ft.Page):
         self._loop = asyncio.get_running_loop()
+
+        self._log_handler = FletLogHandler(max_records=300)
+        logging.getLogger().addHandler(self._log_handler)
+
         self._init_services(self._loop)
 
         if self._widget_controller:
             self._widget_controller.app.setup(page)
             self._widget_controller.start()
+            self._widget_controller.set_log_handler(self._log_handler)
 
         assert self._orchestrator is not None
         self._orchestrator.wire()

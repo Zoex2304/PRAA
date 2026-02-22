@@ -33,6 +33,26 @@ class CompactBarComponent(ft.Container):
             color=theme.colors.text_primary,
             weight=ft.FontWeight.BOLD,
         )
+
+        # Center animated content slot — fades between idle / milestone / spectrum
+        self._center_slot = ft.Container(expand=True, key="bar-idle")
+        self._center_wrap = ft.Container(
+            content=self._center_slot,
+            expand=True,
+            opacity=1.0,
+            animate_opacity=ft.Animation(
+                duration=350,
+                curve=ft.AnimationCurve.EASE_IN_OUT,
+            ),
+        )
+
+        self._expand_btn = ft.IconButton(
+            icon=ft.Icons.EXPAND_MORE,
+            icon_size=16,
+            icon_color=theme.colors.text_muted,
+            tooltip="Expand",
+            on_click=lambda _: self._on_toggle_expand() if self._on_toggle_expand else None,
+        )
         self._play_btn = ft.IconButton(
             icon=ft.Icons.PLAY_ARROW,
             icon_size=18,
@@ -50,35 +70,49 @@ class CompactBarComponent(ft.Container):
             controls=[
                 self._status_icon,
                 self._status_text,
-                ft.Container(expand=True),
+                self._center_wrap,
+                self._expand_btn,
                 self._play_btn,
                 self._close_btn,
             ],
-            spacing=6,
+            spacing=4,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
         self.bgcolor = self._theme.colors.bg_dark
         self.border_radius = ft.border_radius.all(12)
-        self.padding = ft.padding.symmetric(horizontal=12, vertical=4)
+        self.padding = ft.padding.symmetric(horizontal=8, vertical=4)
         self.height = self._theme.dimensions.compact_height
-        self.on_click = lambda _: self._on_toggle_expand() if self._on_toggle_expand else None
 
-    def set_status(self, text: str, color: str):
+    def set_bar_content(self, control: ft.Control | None) -> None:
+        self._center_wrap.opacity = 0.0
+        self._safe_update(self._center_wrap)
+
+        if control is None:
+            self._center_slot.content = None
+            self._center_slot.key = "bar-idle"
+        else:
+            self._center_slot.content = control
+            self._center_slot.key = getattr(control, "key", "bar-content")
+
+        self._center_wrap.opacity = 1.0
+        self._safe_update(self._center_wrap)
+
+    def set_expand_icon(self, is_expanded: bool) -> None:
+        self._expand_btn.icon = ft.Icons.EXPAND_LESS if is_expanded else ft.Icons.EXPAND_MORE
+        self._expand_btn.tooltip = "Collapse" if is_expanded else "Expand"
+        self._safe_update(self._expand_btn)
+
+    def set_status(self, text: str, color: str) -> None:
         self._status_text.value = text
         self._status_icon.color = color
         self._safe_update(self._status_text)
         self._safe_update(self._status_icon)
 
-    def set_play_icon(self, is_playing: bool, is_paused: bool = False):
-        if is_playing:
-            self._play_btn.icon = ft.Icons.PAUSE
-        elif is_paused:
-            self._play_btn.icon = ft.Icons.PLAY_ARROW
-        else:
-            self._play_btn.icon = ft.Icons.PLAY_ARROW
+    def set_play_icon(self, is_playing: bool, is_paused: bool = False) -> None:
+        self._play_btn.icon = ft.Icons.PAUSE if is_playing else ft.Icons.PLAY_ARROW
         self._safe_update(self._play_btn)
 
-    def _safe_update(self, control):
+    def _safe_update(self, control: ft.Control) -> None:
         try:
             control.update()
         except Exception:
