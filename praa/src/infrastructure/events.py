@@ -198,6 +198,30 @@ class OcrCaptureFailed:
 
 
 # ---------------------------------------------------------------------------
+# Events — Upload Layer
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class FileUploadRequested:
+    source_path: Path
+
+
+@dataclass(frozen=True)
+class FileTextReady:
+    source_path: Path
+    text: str
+    file_size_bytes: int
+    word_count: int
+    is_image: bool
+
+
+@dataclass(frozen=True)
+class FileUploadFailed:
+    source_path: Path
+    reason: str
+
+
+# ---------------------------------------------------------------------------
 # Events — Lifecycle
 # ---------------------------------------------------------------------------
 

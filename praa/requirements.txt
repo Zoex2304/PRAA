@@ -17,3 +17,5 @@ winrt-Windows.Storage.Streams
 winrt-Windows.Globalization
 winrt-Windows.Foundation
 winrt-Windows.Foundation.Collections
+pypdf>=4.0
+python-docx>=1.0

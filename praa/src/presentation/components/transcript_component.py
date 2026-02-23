@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from pathlib import Path
+from typing import Callable, List, Optional
 
 import flet as ft
 
 from src.domain.config.theme_config import ThemeConfig
+from src.presentation.components.download_audio_component import DownloadAudioComponent
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,8 @@ class TranscriptComponent(ft.Container):
     def __init__(
         self,
         theme: ThemeConfig,
-        on_copy: Optional[callable] = None,
+        on_copy: Optional[Callable] = None,
+        on_download_requested: Optional[Callable[[List[Path]], None]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -51,6 +54,7 @@ class TranscriptComponent(ft.Container):
             size=theme.typography.font_size_sm,
             color=theme.colors.text_muted,
         )
+        self._download = DownloadAudioComponent(theme, on_download_requested)
 
         header = ft.Row(
             controls=[
@@ -60,7 +64,11 @@ class TranscriptComponent(ft.Container):
                     color=theme.colors.text_muted,
                     weight=ft.FontWeight.BOLD,
                 ),
-                ft.Row(controls=[self._time_label, self._copy_btn], spacing=4),
+                ft.Row(
+                    controls=[self._time_label, self._download, self._copy_btn],
+                    spacing=4,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
         )
@@ -153,6 +161,15 @@ class TranscriptComponent(ft.Container):
 
     def get_text(self) -> str:
         return self._full_text
+
+    def set_audio_pending(self) -> None:
+        self._download.set_pending()
+
+    def set_audio_ready(self, paths: List[Path]) -> None:
+        self._download.set_ready(paths)
+
+    def reset_audio(self) -> None:
+        self._download.reset()
 
     def set_time(self, text: str) -> None:
         self._time_label.value = text

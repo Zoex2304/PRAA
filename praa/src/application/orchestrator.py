@@ -10,9 +10,13 @@ from src.domain.ocr.service import OcrService
 from src.domain.processor.service import ProcessorService
 from src.domain.tray.service import PystrayTrayService
 from src.domain.tts.service import EdgeTTSService
+from src.domain.upload.service import UploadService
 from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import (
     ConfigChanged,
+    FileTextReady,
+    FileUploadFailed,
+    FileUploadRequested,
     HotkeyAction,
     HotkeyPressed,
     OcrCaptureRequested,
@@ -44,6 +48,7 @@ class Orchestrator:
         audio_service: AudioService,
         tray_service: PystrayTrayService,
         ocr_service: Optional[OcrService] = None,
+        upload_service: Optional[UploadService] = None,
         widget_controller: Optional[WidgetController] = None,
     ) -> None:
         self._event_bus = event_bus
@@ -54,6 +59,7 @@ class Orchestrator:
         self._audio = audio_service
         self._tray = tray_service
         self._ocr = ocr_service
+        self._upload = upload_service
         self._widget = widget_controller
 
     def wire(self) -> None:
@@ -95,6 +101,12 @@ class Orchestrator:
             bus.subscribe(OcrTextExtracted, self._handle_ocr_text_extracted)
             if self._widget is not None:
                 bus.subscribe(OcrCaptureFailed, self._widget.on_ocr_failed)
+
+        if self._upload is not None:
+            bus.subscribe(FileUploadRequested, self._upload.handle_file_upload_requested)
+            if self._widget is not None:
+                bus.subscribe(FileTextReady, self._widget.on_file_text_ready)
+                bus.subscribe(FileUploadFailed, self._widget.on_file_upload_failed)
 
         logger.info(
             "Orchestrator wired: %d subscriptions registered",

@@ -17,6 +17,9 @@ from src.domain.widget.time_provider import CalibratedTimeProvider
 from src.infrastructure.activity_tracker import ActivityTracker
 from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import (
+    FileTextReady,
+    FileUploadFailed,
+    FileUploadRequested,
     HotkeyAction,
     HotkeyPressed,
     OcrCaptureFailed,
@@ -90,6 +93,7 @@ class WidgetController:
         self._chunk_statuses: dict[int, str] = {}
         self._running = False
         self._has_been_activated = False
+        self._active_upload_path: Optional[Path] = None
 
         self._app = FletApp(
             theme=theme,
@@ -103,6 +107,9 @@ class WidgetController:
             on_pause_chunk=self._handle_pause_chunk,
             on_seek_chunk=self._handle_seek_chunk,
             on_seek_position=self._handle_seek_position,
+            on_download_audio_requested=self._handle_download_request,
+            on_download_save=self._handle_download_save,
+            on_file_uploaded=self._handle_file_uploaded,
         )
 
     @property
@@ -170,6 +177,7 @@ class WidgetController:
         self._app.set_phase("processing")
         self._app.advance_milestone(0, "Reading clipboard…")
         self._app.reset_queue()
+        self._app.reset_transcript_audio()
 
         self._schedule_ui_update()
 
@@ -181,6 +189,7 @@ class WidgetController:
 
         self._app.advance_milestone(2, f"0 / {n} chunks")
         self._app.setup_queue(n)
+        self._app.set_audio_pending()
 
         if self._app.home and self._app.home.transcript:
             self._app.home.transcript.set_content(self._text_chunks)
@@ -190,6 +199,9 @@ class WidgetController:
             name = chunk.strip().replace("\n", " ")[:30] + ("…" if len(chunk) > 30 else "")
             self._app.update_queue_status(i, "pending", name)
             self._chunk_statuses[i] = "pending"
+
+        if self._active_upload_path:
+            self._app.advance_upload_step(self._active_upload_path, 3)
 
     async def on_synthesis_started(self, event: SynthesisStarted) -> None:
         self._total_chunks = event.total_chunks
@@ -223,6 +235,9 @@ class WidgetController:
             self._state_manager.processing_complete()
             if self._transcript_text:
                 self._save_session()
+            self._app.set_audio_ready(list(self._audio_paths))
+            if self._active_upload_path:
+                self._app.advance_upload_step(self._active_upload_path, 4)
 
         self._schedule_ui_update()
 
@@ -242,6 +257,10 @@ class WidgetController:
         # Milestone complete → switch to playing phase
         self._app.complete_milestone()
         self._app.set_phase("playing")
+
+        if self._active_upload_path:
+            self._app.complete_upload_card(self._active_upload_path)
+            self._active_upload_path = None
 
         self._spectrum.set_active(True)
 
@@ -305,6 +324,28 @@ class WidgetController:
                 state_info.status_text, state_info.status_color
             )
 
+    async def on_file_text_ready(self, event: FileTextReady) -> None:
+        from src.domain.upload.models import UploadRecord
+        record = UploadRecord(
+            source_path=event.source_path,
+            file_name=event.source_path.name,
+            file_size_bytes=event.file_size_bytes,
+            word_count=event.word_count,
+            is_image=event.is_image,
+        )
+        self._active_upload_path = event.source_path
+        self._app.add_upload_record(record)
+        self._app.advance_upload_step(event.source_path, 2)
+
+    async def on_file_upload_failed(self, event: FileUploadFailed) -> None:
+        logger.warning("File upload failed: %s — %s", event.source_path.name, event.reason)
+        if self._app.compact_bar:
+            self._app.compact_bar.set_status(f"Upload failed: {event.reason}", "#ef4444")
+        await asyncio.sleep(2.0)
+        state_info = self._state_manager.get_state_info()
+        if self._app.compact_bar:
+            self._app.compact_bar.set_status(state_info.status_text, state_info.status_color)
+
     async def on_tray_action(self, event: TrayAction) -> None:
         if event.action == TrayActionType.TOGGLE_MODE:
             if event.value in ("widget", "toggle_window"):
@@ -363,6 +404,33 @@ class WidgetController:
                 ),
                 self._loop,
             )
+
+    def _handle_download_request(self, paths: list[Path]) -> None:
+        self._app.save_audio_dialog(paths)
+
+    def _handle_download_save(self, paths: list[Path], save_path: Path) -> None:
+        asyncio.run_coroutine_threadsafe(
+            self._merge_and_save(paths, save_path), self._loop
+        )
+
+    async def _merge_and_save(self, paths: list[Path], save_path: Path) -> None:
+        try:
+            import numpy as np
+            import soundfile as sf
+            chunks = []
+            samplerate = 24000
+            for p in paths:
+                data, sr = sf.read(str(p))
+                chunks.append(data)
+                samplerate = sr
+            merged = np.concatenate(chunks, axis=0)
+            sf.write(str(save_path), merged, samplerate)
+            logger.info("Audio saved: %s", save_path)
+        except Exception:
+            logger.exception("Failed to merge/save audio")
+
+    def _handle_file_uploaded(self, path: Path) -> None:
+        self._publish_event(FileUploadRequested(source_path=path))
 
     # ------------------------------------------------------------------
     # Word sync callback

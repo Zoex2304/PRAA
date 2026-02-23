@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable, Optional
+from pathlib import Path
+from typing import Callable, List, Optional
 
 import flet as ft
 
@@ -11,6 +12,7 @@ from src.presentation.components.compact_bar_component import CompactBarComponen
 from src.presentation.components.compact_milestone_bar import CompactMilestoneBar
 from src.presentation.components.chunk_progress_component import ChunkProgressComponent
 from src.presentation.components.spectrum_component import SpectrumComponent
+from src.presentation.components.upload_section_component import UploadSectionComponent
 from src.presentation.navigation_controller import NavigationController, ViewType
 from src.presentation.pages.home_page import HomePage
 from src.presentation.pages.debug_page import DebugPage
@@ -37,6 +39,9 @@ class FletApp:
         on_pause_chunk: Optional[Callable[[int], None]] = None,
         on_seek_chunk: Optional[Callable[[int], None]] = None,
         on_seek_position: Optional[Callable[[int, float], None]] = None,
+        on_download_audio_requested: Optional[Callable[[List[Path]], None]] = None,
+        on_download_save: Optional[Callable[[List[Path], Path], None]] = None,
+        on_file_uploaded: Optional[Callable[[Path], None]] = None,
     ):
         self._theme = theme
         self._config = config
@@ -49,11 +54,15 @@ class FletApp:
         self._on_pause_chunk = on_pause_chunk
         self._on_seek_chunk = on_seek_chunk
         self._on_seek_position = on_seek_position
+        self._on_download_audio_requested = on_download_audio_requested
+        self._on_download_save = on_download_save
+        self._on_file_uploaded = on_file_uploaded
 
         self._page: Optional[ft.Page] = None
         self._expanded = False
         self._phase = "idle"          # "idle" | "processing" | "playing"
         self._nav: Optional[NavigationController] = None
+        self._pending_download_paths: List[Path] = []
 
         # Singleton controls created in setup()
         self.compact_milestone: Optional[CompactMilestoneBar] = None
@@ -70,6 +79,7 @@ class FletApp:
         self._content_area: Optional[ft.Container] = None
         self._nav_bar: Optional[ft.Row] = None
         self._nav_buttons: dict[ViewType, ft.Container] = {}
+        self._upload_section: Optional[UploadSectionComponent] = None
         self._expanded_panel: Optional[ft.Column] = None
 
     def setup(self, page: ft.Page) -> None:
@@ -98,6 +108,7 @@ class FletApp:
             on_pause_chunk=self._on_pause_chunk,
             on_seek_chunk=self._on_seek_chunk,
             on_seek_position=self._on_seek_position,
+            on_download_requested=self._on_download_audio_requested,
         )
         self.debug = DebugPage(
             self._theme,
@@ -122,21 +133,36 @@ class FletApp:
 
         self._content_area = ft.Container(content=self.home, expand=True)
 
+        colors = self._theme.colors
         self._nav_buttons = {}
-        self._nav_bar = ft.Row(
+        nav_items = ft.Row(
             controls=[
                 self._nav_btn("Home",    ft.Icons.HOME,        ViewType.HOME,    selected=True),
                 self._nav_btn("Debug",   ft.Icons.BUG_REPORT,  ViewType.DEBUG),
                 self._nav_btn("History", ft.Icons.HISTORY,     ViewType.HISTORY),
                 self._nav_btn("Logs",    ft.Icons.TERMINAL,    ViewType.LOGS),
             ],
-            alignment=ft.MainAxisAlignment.CENTER,
             spacing=0,
         )
+        upload_btn = ft.IconButton(
+            icon=ft.Icons.UPLOAD_FILE,
+            icon_size=16,
+            icon_color=colors.text_muted,
+            tooltip="Upload file",
+            on_click=self._open_upload_dialog,
+        )
+        self._nav_bar = ft.Row(
+            controls=[nav_items, upload_btn],
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+        self._upload_section = UploadSectionComponent(self._theme)
 
         self._expanded_panel = ft.Column(
             controls=[
                 self._nav_bar,
+                self._upload_section,
                 self._content_area,
             ],
             spacing=2,
@@ -231,6 +257,43 @@ class FletApp:
             self.compact_bar.activate()
 
     # ----------------------------------------------------------------
+    # Transcript audio state
+    # ----------------------------------------------------------------
+
+    def set_audio_pending(self) -> None:
+        if self.home:
+            self.home.set_audio_pending()
+
+    def set_audio_ready(self, paths: List[Path]) -> None:
+        if self.home:
+            self.home.set_audio_ready(paths)
+
+    def reset_transcript_audio(self) -> None:
+        if self.home:
+            self.home.reset_audio()
+
+    def save_audio_dialog(self, paths: List[Path]) -> None:
+        self._pending_download_paths = list(paths)
+        if self._page:
+            self._page.run_task(self._do_save_dialog)
+
+    # ----------------------------------------------------------------
+    # Upload record management
+    # ----------------------------------------------------------------
+
+    def add_upload_record(self, record) -> None:
+        if self._upload_section:
+            self._upload_section.add_record(record)
+
+    def advance_upload_step(self, source_path: Path, step: int) -> None:
+        if self._upload_section:
+            self._upload_section.advance_card_step(source_path, step)
+
+    def complete_upload_card(self, source_path: Path) -> None:
+        if self._upload_section:
+            self._upload_section.complete_card(source_path)
+
+    # ----------------------------------------------------------------
     # Expand / Collapse
     # ----------------------------------------------------------------
 
@@ -266,6 +329,31 @@ class FletApp:
     # ----------------------------------------------------------------
     # Internal helpers
     # ----------------------------------------------------------------
+
+    async def _open_upload_dialog(self, _e=None) -> None:
+        files = await ft.FilePicker().pick_files(
+            dialog_title="Select a file to read aloud",
+            file_type=ft.FilePickerFileType.CUSTOM,
+            allowed_extensions=["txt", "md", "pdf", "docx", "png", "jpg", "jpeg", "bmp"],
+            allow_multiple=False,
+        )
+        if files and self._on_file_uploaded:
+            for f in files:
+                if f.path:
+                    self._on_file_uploaded(Path(f.path))
+
+    async def _do_save_dialog(self) -> None:
+        if not self._pending_download_paths:
+            return
+        name = "praa_audio.wav" if len(self._pending_download_paths) == 1 else "praa_audio_merged.wav"
+        save_path = await ft.FilePicker().save_file(
+            dialog_title="Save audio",
+            file_name=name,
+            allowed_extensions=["wav"],
+        )
+        if save_path and self._on_download_save:
+            self._on_download_save(list(self._pending_download_paths), Path(save_path))
+            self._pending_download_paths = []
 
     def _toggle_expand(self) -> None:
         if self._expanded:

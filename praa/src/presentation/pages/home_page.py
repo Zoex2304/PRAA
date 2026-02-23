@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Callable, Optional
+from pathlib import Path
+from typing import Callable, List, Optional
 
 import flet as ft
 
@@ -23,13 +24,18 @@ class HomePage(ft.Container):
         on_pause_chunk: Optional[Callable[[int], None]] = None,
         on_seek_chunk: Optional[Callable[[int], None]] = None,
         on_seek_position: Optional[Callable[[int, float], None]] = None,
+        on_download_requested: Optional[Callable[[List[Path]], None]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self._theme = theme
 
         self.spectrum = home_spectrum
-        self.transcript = TranscriptComponent(theme, on_copy=self._copy_to_clipboard)
+        self.transcript = TranscriptComponent(
+            theme,
+            on_copy=self._copy_to_clipboard,
+            on_download_requested=on_download_requested,
+        )
         self.milestone = MilestoneComponent(theme)
 
         # Queue + timeline live in the playing view
@@ -73,6 +79,19 @@ class HomePage(ft.Container):
     def show_playing(self) -> None:
         self._inner.controls = [self._playing_view]
         self._safe_update(self._inner)
+
+    # ------------------------------------------------------------------
+    # Transcript audio state passthroughs
+    # ------------------------------------------------------------------
+
+    def set_audio_pending(self) -> None:
+        self.transcript.set_audio_pending()
+
+    def set_audio_ready(self, paths: List[Path]) -> None:
+        self.transcript.set_audio_ready(paths)
+
+    def reset_audio(self) -> None:
+        self.transcript.reset_audio()
 
     # ------------------------------------------------------------------
     # Internal

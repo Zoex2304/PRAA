@@ -22,6 +22,7 @@ from src.domain.processor.service import ProcessorService
 from src.domain.tray.service import PystrayTrayService
 from src.domain.tts.service import EdgeTTSService
 from src.domain.session.service import SessionService
+from src.domain.upload.service import UploadService
 from src.infrastructure.database import DatabaseManager
 from src.infrastructure.activity_tracker import ActivityTracker
 from src.infrastructure.event_bus import EventBus
@@ -52,6 +53,7 @@ class Application:
         self._audio_service: AudioService | None = None
         self._tray_service: PystrayTrayService | None = None
         self._ocr_service: OcrService | None = None
+        self._upload_service: UploadService | None = None
         self._widget_controller: WidgetController | None = None
         self._orchestrator: Orchestrator | None = None
         self._db_manager: DatabaseManager | None = None
@@ -73,12 +75,18 @@ class Application:
         self._audio_service = AudioService(self._event_bus, loop)
         self._hotkey_service = PynputHotkeyService(config, self._event_bus, loop)
 
+        ocr_reader = OcrReaderService()
         self._ocr_service = OcrService(
             event_bus=self._event_bus,
             loop=loop,
             capture_service=ScreenCaptureService(),
             overlay=OverlayController(),
-            reader_service=OcrReaderService(),
+            reader_service=ocr_reader,
+        )
+        self._upload_service = UploadService(
+            event_bus=self._event_bus,
+            loop=loop,
+            ocr_reader=ocr_reader,
         )
 
         icon_path = self._base_dir / "assets" / "icon.png"
@@ -108,6 +116,7 @@ class Application:
             audio_service=self._audio_service,
             tray_service=self._tray_service,
             ocr_service=self._ocr_service,
+            upload_service=self._upload_service,
             widget_controller=self._widget_controller,
         )
 
