@@ -76,6 +76,7 @@ class PynputHotkeyService:
         # Parse configured hotkeys into key sets
         self._hotkey_read = _parse_hotkey(config.hotkey_read)
         self._hotkey_stop = _parse_hotkey(config.hotkey_stop)
+        self._hotkey_ocr = _parse_hotkey(config.hotkey_ocr)
 
         # Track currently pressed keys
         self._pressed: set[keyboard.Key | keyboard.KeyCode] = set()
@@ -85,9 +86,10 @@ class PynputHotkeyService:
         self._controller = keyboard.Controller()
 
         logger.info(
-            "Hotkey service: READ=%s, STOP=%s",
+            "Hotkey service: READ=%s, STOP=%s, OCR=%s",
             config.hotkey_read,
             config.hotkey_stop,
+            config.hotkey_ocr,
         )
 
     def _on_press(self, key: keyboard.Key | keyboard.KeyCode | None) -> None:
@@ -109,6 +111,11 @@ class PynputHotkeyService:
             logger.info("STOP hotkey triggered")
             self._publish_event(HotkeyAction.STOP)
             self._pressed.clear()
+
+        elif self._hotkey_ocr.issubset(normalized):
+            logger.info("OCR hotkey triggered — opening screen capture overlay")
+            self._pressed.clear()
+            self._publish_event(HotkeyAction.OCR)
 
     def _on_release(self, key: keyboard.Key | keyboard.KeyCode | None) -> None:
         """Handle key release: remove from tracked set."""

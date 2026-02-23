@@ -6,6 +6,7 @@ from typing import Optional
 from src.domain.audio.service import AudioService
 from src.domain.clipboard.service import TkinterClipboardService
 from src.domain.config.service import ConfigService
+from src.domain.ocr.service import OcrService
 from src.domain.processor.service import ProcessorService
 from src.domain.tray.service import PystrayTrayService
 from src.domain.tts.service import EdgeTTSService
@@ -14,6 +15,9 @@ from src.infrastructure.events import (
     ConfigChanged,
     HotkeyAction,
     HotkeyPressed,
+    OcrCaptureRequested,
+    OcrCaptureFailed,
+    OcrTextExtracted,
     PlaybackPaused,
     PlaybackResumed,
     PlaybackStarted,
@@ -39,6 +43,7 @@ class Orchestrator:
         tts_service: EdgeTTSService,
         audio_service: AudioService,
         tray_service: PystrayTrayService,
+        ocr_service: Optional[OcrService] = None,
         widget_controller: Optional[WidgetController] = None,
     ) -> None:
         self._event_bus = event_bus
@@ -48,6 +53,7 @@ class Orchestrator:
         self._tts = tts_service
         self._audio = audio_service
         self._tray = tray_service
+        self._ocr = ocr_service
         self._widget = widget_controller
 
     def wire(self) -> None:
@@ -84,6 +90,12 @@ class Orchestrator:
         bus.subscribe(PlaybackPaused, self._tray.handle_playback_paused)
         bus.subscribe(PlaybackResumed, self._tray.handle_playback_resumed)
 
+        if self._ocr is not None:
+            bus.subscribe(OcrCaptureRequested, self._ocr.handle_ocr_requested)
+            bus.subscribe(OcrTextExtracted, self._handle_ocr_text_extracted)
+            if self._widget is not None:
+                bus.subscribe(OcrCaptureFailed, self._widget.on_ocr_failed)
+
         logger.info(
             "Orchestrator wired: %d subscriptions registered",
             bus.subscriber_count,
@@ -92,3 +104,9 @@ class Orchestrator:
     async def _handle_hotkey(self, event: HotkeyPressed) -> None:
         if event.action == HotkeyAction.READ:
             await self._clipboard.capture_and_publish()
+        elif event.action == HotkeyAction.OCR:
+            await self._event_bus.publish(OcrCaptureRequested())
+
+    async def _handle_ocr_text_extracted(self, event: OcrTextExtracted) -> None:
+        """Bridge OCR extracted text into the standard TTS pipeline."""
+        await self._event_bus.publish(TextCaptured(raw_text=event.text))

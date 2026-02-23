@@ -19,6 +19,7 @@ from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import (
     HotkeyAction,
     HotkeyPressed,
+    OcrCaptureFailed,
     PlaybackPaused,
     PlaybackResumed,
     PlaybackStarted,
@@ -288,6 +289,21 @@ class WidgetController:
             self._state_manager.stop_playback()
 
         self._schedule_ui_update()
+
+    async def on_ocr_failed(self, event: OcrCaptureFailed) -> None:
+        """Show a brief status notification for non-cancellation OCR failures."""
+        if event.reason == "cancelled":
+            return
+        msg = "No text found" if event.reason == "empty" else "OCR error"
+        if self._app.compact_bar:
+            self._app.compact_bar.set_status(msg, "#ef4444")
+        await asyncio.sleep(2.0)
+        # Restore normal status after notification
+        state_info = self._state_manager.get_state_info()
+        if self._app.compact_bar:
+            self._app.compact_bar.set_status(
+                state_info.status_text, state_info.status_color
+            )
 
     async def on_tray_action(self, event: TrayAction) -> None:
         if event.action == TrayActionType.TOGGLE_MODE:

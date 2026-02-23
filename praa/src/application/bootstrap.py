@@ -14,6 +14,10 @@ from src.domain.config.models import AppConfig, UIMode
 from src.domain.config.service import ConfigService
 from src.domain.config.theme_config import ThemeConfig
 from src.domain.hotkey.service import PynputHotkeyService
+from src.domain.ocr.capture import ScreenCaptureService
+from src.domain.ocr.overlay import OverlayController
+from src.domain.ocr.reader import OcrReaderService
+from src.domain.ocr.service import OcrService
 from src.domain.processor.service import ProcessorService
 from src.domain.tray.service import PystrayTrayService
 from src.domain.tts.service import EdgeTTSService
@@ -47,6 +51,7 @@ class Application:
         self._tts_service: EdgeTTSService | None = None
         self._audio_service: AudioService | None = None
         self._tray_service: PystrayTrayService | None = None
+        self._ocr_service: OcrService | None = None
         self._widget_controller: WidgetController | None = None
         self._orchestrator: Orchestrator | None = None
         self._db_manager: DatabaseManager | None = None
@@ -67,6 +72,14 @@ class Application:
         self._tts_service = EdgeTTSService(self._event_bus)
         self._audio_service = AudioService(self._event_bus, loop)
         self._hotkey_service = PynputHotkeyService(config, self._event_bus, loop)
+
+        self._ocr_service = OcrService(
+            event_bus=self._event_bus,
+            loop=loop,
+            capture_service=ScreenCaptureService(),
+            overlay=OverlayController(),
+            reader_service=OcrReaderService(),
+        )
 
         icon_path = self._base_dir / "assets" / "icon.png"
         self._tray_service = PystrayTrayService(
@@ -94,6 +107,7 @@ class Application:
             tts_service=self._tts_service,
             audio_service=self._audio_service,
             tray_service=self._tray_service,
+            ocr_service=self._ocr_service,
             widget_controller=self._widget_controller,
         )
 

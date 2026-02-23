@@ -21,6 +21,7 @@ class HotkeyAction(Enum):
     """Actions that can be triggered by a global hotkey."""
     READ = auto()
     STOP = auto()
+    OCR = auto()   # Screen region OCR capture
 
 
 class TrayActionType(Enum):
@@ -163,6 +164,37 @@ class WidgetAction:
     """Emitted when the user interacts with the floating widget."""
     action: TrayActionType
     value: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Events — OCR Layer
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class OcrCaptureRequested:
+    """Emitted when the OCR hotkey (Ctrl+Shift+O) is pressed."""
+    pass
+
+
+@dataclass(frozen=True)
+class OcrRegionSelected:
+    """Emitted when the user finishes drag-selecting a screen region."""
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+@dataclass(frozen=True)
+class OcrTextExtracted:
+    """Emitted when OCR successfully extracts text from the captured region."""
+    text: str
+
+
+@dataclass(frozen=True)
+class OcrCaptureFailed:
+    """Emitted when OCR returns empty text, errors, or is cancelled."""
+    reason: str  # "empty" | "error" | "cancelled"
 
 
 # ---------------------------------------------------------------------------

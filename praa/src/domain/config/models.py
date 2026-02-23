@@ -50,6 +50,10 @@ class AppConfig(BaseModel):
         default="<ctrl>+<shift>+s",
         description="Global hotkey to stop current playback",
     )
+    hotkey_ocr: str = Field(
+        default="<ctrl>+<shift>+o",
+        description="Global hotkey to trigger OCR screen capture",
+    )
 
     # --- Voice settings ---
     voice_id: str = Field(

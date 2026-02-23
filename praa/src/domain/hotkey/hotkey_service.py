@@ -1,12 +1,3 @@
-"""
-Hotkey Domain — pynput-based Global Hotkey Service
-
-Concrete implementation of IHotkeyListener using pynput.
-Publishes HotkeyPressed events — knows nothing about clipboard, TTS, or audio (SRP).
-
-Auto-copy: When READ hotkey is triggered, simulates Ctrl+C first so the user
-only needs to select text and press the hotkey (no manual copy required).
-"""
 
 from __future__ import annotations
 
@@ -25,15 +16,6 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_hotkey(hotkey_str: str) -> frozenset[keyboard.Key | keyboard.KeyCode]:
-    """
-    Parse a hotkey string like '<ctrl>+<shift>+r' into a frozenset of pynput keys.
-
-    Args:
-        hotkey_str: Hotkey string in pynput format.
-
-    Returns:
-        Frozen set of key objects for combination matching.
-    """
     keys: set[keyboard.Key | keyboard.KeyCode] = set()
     for part in hotkey_str.lower().split("+"):
         part = part.strip()
@@ -58,16 +40,6 @@ def _parse_hotkey(hotkey_str: str) -> frozenset[keyboard.Key | keyboard.KeyCode]
 
 
 class PynputHotkeyService:
-    """
-    Global hotkey listener using pynput.
-
-    Registers Ctrl+Shift+R (read) and Ctrl+Shift+S (stop) by default.
-    When a registered combination is pressed, publishes a HotkeyPressed event
-    to the EventBus. This service has no knowledge of what happens after
-    the event is published — pure SRP.
-
-    For READ hotkey: auto-copies selected text via Ctrl+C before publishing.
-    """
 
     def __init__(self, config: AppConfig, event_bus: EventBus, loop: asyncio.AbstractEventLoop) -> None:
         self._event_bus = event_bus
@@ -91,7 +63,6 @@ class PynputHotkeyService:
         )
 
     def _on_press(self, key: keyboard.Key | keyboard.KeyCode | None) -> None:
-        """Handle key press: track pressed keys and check for hotkey matches."""
         if key is None:
             return
 
@@ -111,20 +82,11 @@ class PynputHotkeyService:
             self._pressed.clear()
 
     def _on_release(self, key: keyboard.Key | keyboard.KeyCode | None) -> None:
-        """Handle key release: remove from tracked set."""
         if key is None:
             return
         self._pressed.discard(key)
 
     def _normalize_pressed(self) -> set[keyboard.Key | keyboard.KeyCode]:
-        """Normalize modifier keys and character keys for consistent matching.
-
-        Modifier normalization: ctrl_r → ctrl_l, shift_r → shift, alt_r → alt_l.
-        Character normalization: KeyCode(char, vk) → KeyCode.from_vk(vk) so that
-        hash values match those produced by _parse_hotkey. This is necessary
-        because pynput's KeyCode.__hash__ differs between from_char and from_vk
-        forms even when __eq__ returns True.
-        """
         normalized: set[keyboard.Key | keyboard.KeyCode] = set()
         for key in self._pressed:
             if key == keyboard.Key.ctrl_r:
@@ -140,11 +102,6 @@ class PynputHotkeyService:
         return normalized
 
     def _auto_copy_and_publish(self, action: HotkeyAction) -> None:
-        """Release modifiers, simulate Ctrl+C, then publish the event.
-
-        This allows users to just select text and press the hotkey —
-        no manual Ctrl+C required.
-        """
         try:
             # Release currently held modifier keys to avoid Ctrl+Shift+C
             self._controller.release(keyboard.Key.shift)
@@ -163,14 +120,12 @@ class PynputHotkeyService:
         self._publish_event(action)
 
     def _publish_event(self, action: HotkeyAction) -> None:
-        """Thread-safe event publishing from pynput's listener thread."""
         asyncio.run_coroutine_threadsafe(
             self._event_bus.publish(HotkeyPressed(action=action)),
             self._loop,
         )
 
     def start(self) -> None:
-        """Begin listening for global hotkeys."""
         if self._listener is not None:
             logger.warning("Hotkey listener already running")
             return
@@ -184,7 +139,6 @@ class PynputHotkeyService:
         logger.info("Hotkey listener started")
 
     def stop(self) -> None:
-        """Stop listening and release all hotkey registrations."""
         if self._listener is not None:
             self._listener.stop()
             self._listener = None
