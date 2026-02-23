@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 
 from src.domain.ocr.capture import ScreenCaptureService
+from src.domain.ocr.config import CAPTURE_DELAY_S
 from src.domain.ocr.overlay import OverlayController, Region
 from src.domain.ocr.reader import OcrReaderService
 from src.infrastructure.event_bus import EventBus
@@ -16,8 +17,6 @@ from src.infrastructure.events import (
 )
 
 logger = logging.getLogger(__name__)
-
-_CAPTURE_DELAY_S = 0.3
 
 
 class OcrService:
@@ -62,7 +61,7 @@ class OcrService:
     async def _process_region(self, region: Region) -> None:
         x, y, w, h = region
 
-        await asyncio.sleep(_CAPTURE_DELAY_S)
+        await asyncio.sleep(CAPTURE_DELAY_S)
 
         logger.info("OCR: capturing region (%d, %d, %d×%d)", x, y, w, h)
         try:

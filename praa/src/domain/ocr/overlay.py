@@ -5,14 +5,16 @@ import threading
 import tkinter as tk
 from typing import Callable, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+from src.domain.ocr.config import (
+    OVERLAY_BACKGROUND_COLOR,
+    OVERLAY_MIN_DRAG_PX,
+    OVERLAY_OPACITY,
+    OVERLAY_SELECTION_COLOR,
+    OVERLAY_SELECTION_LINE_WIDTH,
+    OVERLAY_TRANSPARENT_COLOR,
+)
 
-_OVERLAY_BG = "#222222"
-_OVERLAY_ALPHA = 0.65
-_TRANSPARENT_COLOR = "#000000"
-_OUTLINE_COLOR = "#3b82f6"
-_OUTLINE_WIDTH = 2
-_MIN_DRAG_PX = 5
+logger = logging.getLogger(__name__)
 
 Region = Tuple[int, int, int, int]
 RegionCallback = Callable[[Optional[Region]], None]
@@ -60,16 +62,16 @@ class _OverlayWindow:
     def _setup_window(self) -> None:
         self._root.attributes("-fullscreen", True)
         self._root.attributes("-topmost", True)
-        self._root.attributes("-alpha", _OVERLAY_ALPHA)
-        self._root.attributes("-transparentcolor", _TRANSPARENT_COLOR)
+        self._root.attributes("-alpha", OVERLAY_OPACITY)
+        self._root.attributes("-transparentcolor", OVERLAY_TRANSPARENT_COLOR)
         self._root.overrideredirect(True)
-        self._root.configure(cursor="crosshair", bg=_OVERLAY_BG)
+        self._root.configure(cursor="crosshair", bg=OVERLAY_BACKGROUND_COLOR)
         self._root.focus_force()
 
     def _setup_canvas(self) -> None:
         self._canvas = tk.Canvas(
             self._root,
-            bg=_OVERLAY_BG,
+            bg=OVERLAY_BACKGROUND_COLOR,
             cursor="crosshair",
             highlightthickness=0,
         )
@@ -101,9 +103,9 @@ class _OverlayWindow:
 
         self._rect_id = self._canvas.create_rectangle(
             x0, y0, x1, y1,
-            outline=_OUTLINE_COLOR,
-            width=_OUTLINE_WIDTH,
-            fill=_TRANSPARENT_COLOR,
+            outline=OVERLAY_SELECTION_COLOR,
+            width=OVERLAY_SELECTION_LINE_WIDTH,
+            fill=OVERLAY_TRANSPARENT_COLOR,
         )
 
     def _on_release(self, event: tk.Event) -> None:
@@ -114,7 +116,7 @@ class _OverlayWindow:
 
         self._root.destroy()
 
-        if w >= _MIN_DRAG_PX and h >= _MIN_DRAG_PX:
+        if w >= OVERLAY_MIN_DRAG_PX and h >= OVERLAY_MIN_DRAG_PX:
             logger.debug("Region selected: (%d, %d, %d×%d)", x, y, w, h)
             self._callback((x, y, w, h))
         else:

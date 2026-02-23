@@ -10,11 +10,12 @@ from src.presentation.components.chunk_timeline_component import ChunkTimelineCo
 from src.presentation.components.milestone_component import MilestoneComponent
 from src.presentation.components.queue_component import QueueComponent
 from src.presentation.components.spectrum_component import SpectrumComponent
+from src.presentation.components.speed_control_component import SpeedControlComponent
 from src.presentation.components.transcript_component import TranscriptComponent
+from src.presentation.components.upload_section_component import UploadSectionComponent
 
 
 class HomePage(ft.Container):
-    """Expanded home view. Switches between idle / processing / playing states."""
 
     def __init__(
         self,
@@ -25,6 +26,8 @@ class HomePage(ft.Container):
         on_seek_chunk: Optional[Callable[[int], None]] = None,
         on_seek_position: Optional[Callable[[int, float], None]] = None,
         on_download_requested: Optional[Callable[[List[Path]], None]] = None,
+        on_speed_change: Optional[Callable[[float], None]] = None,
+        current_speed: float = 1.0,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -38,6 +41,16 @@ class HomePage(ft.Container):
         )
         self.milestone = MilestoneComponent(theme)
 
+        # Upload progress section (Home-page only, single record)
+        self.upload_section = UploadSectionComponent(theme)
+
+        # Speed control
+        self.speed_control = SpeedControlComponent(
+            theme,
+            current_speed=current_speed,
+            on_speed_change=on_speed_change,
+        )
+
         # Queue + timeline live in the playing view
         self.queue = QueueComponent(
             theme,
@@ -50,10 +63,15 @@ class HomePage(ft.Container):
 
         self._playing_view = ft.Column(
             controls=[
+                ft.Row(
+                    controls=[self.speed_control],
+                    alignment=ft.MainAxisAlignment.END,
+                ),
                 self.queue,
                 self.timeline,
                 self.spectrum,
                 self.transcript,
+                self.upload_section,
             ],
             spacing=4,
             expand=True,
@@ -92,6 +110,19 @@ class HomePage(ft.Container):
 
     def reset_audio(self) -> None:
         self.transcript.reset_audio()
+
+    # ------------------------------------------------------------------
+    # Upload section passthroughs
+    # ------------------------------------------------------------------
+
+    def add_upload_record(self, record) -> None:
+        self.upload_section.add_record(record)
+
+    def advance_upload_step(self, source_path: Path, step: int) -> None:
+        self.upload_section.advance_card_step(source_path, step)
+
+    def complete_upload_card(self, source_path: Path) -> None:
+        self.upload_section.complete_card(source_path)
 
     # ------------------------------------------------------------------
     # Internal

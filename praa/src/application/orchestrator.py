@@ -19,8 +19,8 @@ from src.infrastructure.events import (
     FileUploadRequested,
     HotkeyAction,
     HotkeyPressed,
-    OcrCaptureRequested,
     OcrCaptureFailed,
+    OcrCaptureRequested,
     OcrTextExtracted,
     PlaybackPaused,
     PlaybackResumed,
@@ -76,6 +76,7 @@ class Orchestrator:
             bus.subscribe(PlaybackResumed, self._widget.on_playback_resumed)
             bus.subscribe(PlaybackStopped, self._widget.on_playback_stopped)
             bus.subscribe(TrayAction, self._widget.on_tray_action)
+            bus.subscribe(ConfigChanged, self._widget.on_config_changed)
 
         bus.subscribe(HotkeyPressed, self._handle_hotkey)
         bus.subscribe(TextCaptured, self._processor.handle_text_captured)
@@ -121,4 +122,4 @@ class Orchestrator:
 
     async def _handle_ocr_text_extracted(self, event: OcrTextExtracted) -> None:
         """Bridge OCR extracted text into the standard TTS pipeline."""
-        await self._event_bus.publish(TextCaptured(raw_text=event.text))
+        await self._event_bus.publish(TextCaptured(raw_text=event.text, source_type="OCR"))

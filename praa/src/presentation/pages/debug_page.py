@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 def _thread_role(name: str) -> str:
-    """Deterministic objective derived from thread name."""
     lower = name.lower()
     if "mainthread" in lower:                       return "Application entry point"
     if "flet" in lower:                             return "UI event pump"
@@ -49,7 +48,7 @@ class DebugPage(ft.Container):
         colors = theme.colors
         typo = theme.typography
 
-        # ── State: flat indicator row ─────────────────────────────────
+        
         self._state_dot = ft.Icon(ft.Icons.CIRCLE, size=10, color=colors.status_idle)
         self._state_text = ft.Text("Idle", size=typo.font_size_sm, color=colors.text_dim)
         state_row = ft.Row(
@@ -68,7 +67,7 @@ class DebugPage(ft.Container):
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
-        # ── System: KPI grid — always visible, no collapsible ─────────
+        
         self._kpi = KpiGridComponent(theme)
         system_section = ft.Column(
             controls=[
@@ -83,7 +82,7 @@ class DebugPage(ft.Container):
             spacing=4,
         )
 
-        # ── Threads: collapsible, real objectives via ActivityTracker ──
+        
         self._thread_col = ft.Column(spacing=6)
         self._threads_item = CollapsibleComponent(
             theme,
@@ -92,7 +91,7 @@ class DebugPage(ft.Container):
             detail_builder=lambda: self._thread_col,
         )
 
-        # ── Queue: standalone reusable component ──────────────────────
+        
         self.queue = QueueComponent(
             theme,
             on_play_chunk=on_play_chunk,
@@ -119,9 +118,9 @@ class DebugPage(ft.Container):
 
         self._refresh_system_kpi()
 
-    # ------------------------------------------------------------------
-    # Public setters
-    # ------------------------------------------------------------------
+    
+    
+    
 
     def set_log_handler(self, handler) -> None:
         self._log_handler = handler
@@ -140,7 +139,6 @@ class DebugPage(ft.Container):
         self._refresh_system_kpi()
 
     def update_thread_panel(self, log_activity: dict[str, str]) -> None:
-        """Rebuild thread rows using live threads + ActivityTracker data."""
         colors = self._theme.colors
         typo = self._theme.typography
         tracker_data = self._activity_tracker.get_all() if self._activity_tracker else {}
@@ -181,7 +179,7 @@ class DebugPage(ft.Container):
         self._threads_item.set_value(str(threading.active_count()))
         self._safe_update(self._thread_col)
 
-    # Queue delegation (keeps widget_controller API stable)
+    
     def reset_chunks(self) -> None:
         self.queue.reset()
 
@@ -191,9 +189,9 @@ class DebugPage(ft.Container):
     def update_chunk_progress(self, index: int, current_ms: float, total_ms: float) -> None:
         self.queue.update_chunk_progress(index, current_ms, total_ms)
 
-    # ------------------------------------------------------------------
-    # Internal
-    # ------------------------------------------------------------------
+    
+    
+    
 
     def _refresh_system_kpi(self) -> None:
         try:

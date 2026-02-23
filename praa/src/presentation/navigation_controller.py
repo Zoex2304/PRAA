@@ -13,6 +13,7 @@ class ViewType(Enum):
     DEBUG = auto()
     HISTORY = auto()
     LOGS = auto()
+    MANAGE = auto()
 
 
 class NavigationController:

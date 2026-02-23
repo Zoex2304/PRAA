@@ -17,6 +17,13 @@ from typing import Optional
 # Enums
 # ---------------------------------------------------------------------------
 
+class SourceType(str, Enum):
+    """Origin of the text that was captured for TTS."""
+    USER_BLOCK = "USER_BLOCK"    # Clipboard via hotkey
+    OCR = "OCR"                  # Screen region OCR
+    FILE_UPLOAD = "FILE_UPLOAD"  # Uploaded file
+
+
 class HotkeyAction(Enum):
     """Actions that can be triggered by a global hotkey."""
     READ = auto()
@@ -66,6 +73,7 @@ class HotkeyPressed:
 class TextCaptured:
     """Emitted when clipboard text is successfully captured."""
     raw_text: str
+    source_type: str = SourceType.USER_BLOCK
 
 
 # ---------------------------------------------------------------------------

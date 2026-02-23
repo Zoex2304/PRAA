@@ -243,10 +243,15 @@ class AudioService:
 
     def _publish_event(self, event: object) -> None:
         """Thread-safe event publishing from the consumer thread."""
-        asyncio.run_coroutine_threadsafe(
-            self._event_bus.publish(event),
-            self._loop,
-        )
+        if self._loop.is_closed():
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self._event_bus.publish(event),
+                self._loop,
+            )
+        except RuntimeError:
+            pass  # Loop may be shutting down
 
     def play_from_chunk(self, chunk_index: int, audio_paths: list[Path]) -> None:
         """Stop current playback and restart from the given chunk index.

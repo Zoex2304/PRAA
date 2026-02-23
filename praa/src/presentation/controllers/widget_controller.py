@@ -17,12 +17,14 @@ from src.domain.widget.time_provider import CalibratedTimeProvider
 from src.infrastructure.activity_tracker import ActivityTracker
 from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import (
+    ConfigChanged,
     FileTextReady,
     FileUploadFailed,
     FileUploadRequested,
     HotkeyAction,
     HotkeyPressed,
     OcrCaptureFailed,
+    OcrCaptureRequested,
     PlaybackPaused,
     PlaybackResumed,
     PlaybackStarted,
@@ -54,6 +56,8 @@ class WidgetController:
         audio_service: Optional[AudioService] = None,
         config_service=None,
         activity_tracker: Optional[ActivityTracker] = None,
+        is_first_run: bool = False,
+        on_first_run_complete: Optional[callable] = None,
     ):
         self._config = config
         self._theme = theme
@@ -63,6 +67,8 @@ class WidgetController:
         self._audio_service = audio_service
         self._config_service = config_service
         self._activity_tracker = activity_tracker or ActivityTracker()
+        self._is_first_run = is_first_run
+        self._on_first_run_complete = on_first_run_complete
 
         self._state_manager = PlaybackStateManager()
         self._spectrum = SpectrumAnalyzer(num_bands=theme.dimensions.spectrum_bar_count)
@@ -94,6 +100,7 @@ class WidgetController:
         self._running = False
         self._has_been_activated = False
         self._active_upload_path: Optional[Path] = None
+        self._current_source: str = "USER_BLOCK"
 
         self._app = FletApp(
             theme=theme,
@@ -110,6 +117,10 @@ class WidgetController:
             on_download_audio_requested=self._handle_download_request,
             on_download_save=self._handle_download_save,
             on_file_uploaded=self._handle_file_uploaded,
+            on_ocr_capture=self._handle_ocr_capture,
+            on_speed_change=self._handle_speed_change,
+            show_splash=is_first_run,
+            on_splash_dismissed=self._handle_splash_dismissed,
         )
 
     @property
@@ -151,8 +162,9 @@ class WidgetController:
             self.show()
 
     async def on_text_captured(self, event: TextCaptured) -> None:
-        logger.info("Text captured: %d chars", len(event.raw_text))
+        logger.info("Text captured: %d chars (source=%s)", len(event.raw_text), event.source_type)
         self._activity_tracker.report("WidgetController", "Processing", "Text captured")
+        self._current_source = getattr(event, "source_type", "USER_BLOCK")
 
         if not self._has_been_activated:
             self._app.activate_bar()
@@ -346,6 +358,15 @@ class WidgetController:
         if self._app.compact_bar:
             self._app.compact_bar.set_status(state_info.status_text, state_info.status_color)
 
+    async def on_config_changed(self, event: ConfigChanged) -> None:
+        """Sync UI when config changes (e.g. speed slider in another path)."""
+        if event.key == "speed_rate":
+            try:
+                speed = float(event.new_value)
+                self._app.update_speed_display(speed)
+            except (TypeError, ValueError):
+                pass
+
     async def on_tray_action(self, event: TrayAction) -> None:
         if event.action == TrayActionType.TOGGLE_MODE:
             if event.value in ("widget", "toggle_window"):
@@ -431,6 +452,20 @@ class WidgetController:
 
     def _handle_file_uploaded(self, path: Path) -> None:
         self._publish_event(FileUploadRequested(source_path=path))
+
+    def _handle_ocr_capture(self) -> None:
+        self._publish_event(OcrCaptureRequested())
+
+    def _handle_speed_change(self, new_speed: float) -> None:
+        if self._config_service:
+            asyncio.run_coroutine_threadsafe(
+                self._config_service.update("speed_rate", new_speed),
+                self._loop,
+            )
+
+    def _handle_splash_dismissed(self) -> None:
+        if self._on_first_run_complete:
+            self._on_first_run_complete()
 
     # ------------------------------------------------------------------
     # Word sync callback
@@ -537,6 +572,7 @@ class WidgetController:
                 audio_paths=list(self._audio_paths),
                 word_boundaries=boundaries,
                 config=self._config.model_dump(),
+                source_type=self._current_source,
             )
             logger.info("Session saved to history")
         except Exception:

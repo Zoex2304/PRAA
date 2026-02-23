@@ -1,12 +1,3 @@
-"""
-Processor Domain — Text Cleaner
-
-Normalizes text formatting for TTS synthesis.
-
-SINGLE RESPONSIBILITY: Normalize whitespace, remove emojis,
-clean list markers. Does NOT handle content filtering (URLs,
-images, HTML) — that's ContentFilter's job.
-"""
 
 from __future__ import annotations
 
@@ -17,13 +8,6 @@ logger = logging.getLogger(__name__)
 
 
 class TextCleaner:
-    """
-    Normalizes raw text formatting for TTS synthesis.
-
-    Handles whitespace normalization, emoji removal, and list marker
-    cleanup. Content filtering (URLs, images, HTML, markdown) is
-    handled separately by ContentFilter for clear SRP separation.
-    """
 
     # Pre-compiled regex patterns for performance
     _EMOJI_PATTERN = re.compile(
@@ -46,15 +30,6 @@ class TextCleaner:
     _NUMBERED_LIST = re.compile(r"^\s*\d+[.)]\s+", re.MULTILINE)
 
     def clean(self, text: str) -> str:
-        """
-        Normalize raw text formatting for TTS.
-
-        Args:
-            text: Input text (already content-filtered or raw).
-
-        Returns:
-            Normalized text, or empty string if nothing remains.
-        """
         if not text or not text.strip():
             return ""
 

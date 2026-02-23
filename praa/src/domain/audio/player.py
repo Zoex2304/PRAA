@@ -144,14 +144,23 @@ class SoundDevicePlayer:
                     if data.ndim == 1:
                         block = block.reshape(-1, 1)
 
-                    stream.write(block)
+                    try:
+                        stream.write(block)
+                    except Exception:
+                        # Stream stopped externally (e.g. app shutdown) — exit cleanly
+                        logger.debug("Stream write interrupted for %s — exiting loop", audio_path.name)
+                        break
+
                     position = end_pos
                     self._current_position_frames = position
                     self._current_block = block  # Expose for spectrum analyzer
 
             finally:
-                stream.stop()
-                stream.close()
+                try:
+                    stream.stop()
+                    stream.close()
+                except Exception:
+                    pass
 
             with self._lock:
                 self._playing = False

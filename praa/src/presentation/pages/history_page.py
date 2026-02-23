@@ -73,12 +73,15 @@ class HistoryPage(ft.Container):
         try:
             ts_str: str = str(getattr(session, "timestamp", ""))
             ts = ts_str.replace("T", " ")
-            ts = ts[:16]  # type: ignore
+            ts = ts[:16]
         except Exception:
             ts = str(getattr(session, "timestamp", "Unknown"))
 
         preview_text: str = str(getattr(session, "text_content", ""))
-        preview = preview_text[:60].replace("\n", " ") + "..."  # type: ignore
+        preview = preview_text[:60].replace("\n", " ") + "..."
+
+        source_type = getattr(session, "source_type", "USER_BLOCK") or "USER_BLOCK"
+        source_chip = self._source_chip(source_type)
 
         return ft.Container(
             content=ft.Column(
@@ -91,6 +94,7 @@ class HistoryPage(ft.Container):
                                 color=colors.accent,
                                 weight=ft.FontWeight.BOLD,
                             ),
+                            source_chip,
                             ft.Container(expand=True),
                             ft.ElevatedButton(
                                 "Load",
@@ -106,6 +110,7 @@ class HistoryPage(ft.Container):
                                 on_click=lambda _, s=session: self._handle_load(s),
                             ),
                         ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
                     ft.Text(
                         preview,
@@ -118,6 +123,22 @@ class HistoryPage(ft.Container):
             bgcolor=colors.bg_surface,
             border_radius=6,
             padding=ft.padding.all(8),
+        )
+
+    def _source_chip(self, source_type: str) -> ft.Container:
+        typo = self._theme.typography
+        cfg = {
+            "OCR":         ("OCR",      "#3b82f6", "#1e3a5f"),
+            "FILE_UPLOAD": ("File",     "#22c55e", "#14532d"),
+            "USER_BLOCK":  ("Clip",     "#6b7280", "#1f2937"),
+        }
+        label, fg, bg = cfg.get(source_type, ("?", "#6b7280", "#1f2937"))
+        return ft.Container(
+            content=ft.Text(label, size=typo.font_size_xs - 1, color=fg,
+                            weight=ft.FontWeight.BOLD),
+            bgcolor=bg,
+            border_radius=4,
+            padding=ft.padding.symmetric(horizontal=5, vertical=1),
         )
 
     def _show_empty(self, message: str):

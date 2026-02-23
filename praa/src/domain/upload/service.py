@@ -64,7 +64,7 @@ class UploadService:
         ))
 
         if text.strip():
-            await self._event_bus.publish(TextCaptured(raw_text=text))
+            await self._event_bus.publish(TextCaptured(raw_text=text, source_type="FILE_UPLOAD"))
         else:
             await self._event_bus.publish(FileUploadFailed(source_path=path, reason="empty"))
 
@@ -94,6 +94,6 @@ class UploadService:
         ))
 
         if text.strip():
-            await self._event_bus.publish(TextCaptured(raw_text=text))
+            await self._event_bus.publish(TextCaptured(raw_text=text, source_type="FILE_UPLOAD"))
         else:
             await self._event_bus.publish(FileUploadFailed(source_path=path, reason="empty"))

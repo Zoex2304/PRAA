@@ -22,6 +22,8 @@ class UploadSectionComponent(ft.Container):
         self.visible = False
 
     def add_record(self, record: UploadRecord) -> UploadRecordCard:
+        """Add an upload record card, replacing any existing one (single-record policy)."""
+        self.clear_records()
         card = UploadRecordCard(self._theme, record)
         self._cards[str(record.source_path)] = card
         self._cards_list.controls.append(card)
@@ -29,6 +31,14 @@ class UploadSectionComponent(ft.Container):
         self._safe_update(self._cards_list)
         self._safe_update(self)
         return card
+
+    def clear_records(self) -> None:
+        """Remove all existing upload record cards."""
+        self._cards.clear()
+        self._cards_list.controls.clear()
+        self.visible = False
+        self._safe_update(self._cards_list)
+        self._safe_update(self)
 
     def advance_card_step(self, source_path: Path, step: int) -> None:
         card = self._cards.get(str(source_path))

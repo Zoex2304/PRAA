@@ -77,15 +77,29 @@ class DatabaseManager:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             text_content TEXT NOT NULL,
-            audio_paths TEXT NOT NULL,   -- JSON list of file paths
-            word_boundaries TEXT,        -- JSON list of boundaries
-            config_snapshot TEXT         -- JSON snapshot of settings
+            audio_paths TEXT NOT NULL,
+            word_boundaries TEXT,
+            config_snapshot TEXT,
+            source_type TEXT DEFAULT 'USER_BLOCK'
+        );
+        CREATE TABLE IF NOT EXISTS app_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
         );
         """
         try:
             with self._write_lock:
                 self._connection.executescript(schema)
                 self._connection.commit()
+            # Migrate: add source_type column if it doesn't exist
+            try:
+                self._connection.execute(
+                    "ALTER TABLE sessions ADD COLUMN source_type TEXT DEFAULT 'USER_BLOCK'"
+                )
+                self._connection.commit()
+                logger.info("Migrated sessions table: added source_type column")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
             logger.debug("Database schema initialized")
         except sqlite3.Error as e:
             logger.exception("Failed to initialize schema: %s", e)
@@ -119,6 +133,47 @@ class DatabaseManager:
             (limit,)
         )
         return cursor.fetchall()
+
+    def get_app_state(self, key: str) -> Optional[str]:
+        """Get a value from the key-value app_state store."""
+        if not self._connection:
+            return None
+        cursor = self._connection.execute(
+            "SELECT value FROM app_state WHERE key = ?", (key,)
+        )
+        row = cursor.fetchone()
+        return row["value"] if row else None
+
+    def set_app_state(self, key: str, value: str) -> None:
+        """Set a value in the key-value app_state store."""
+        if not self._connection:
+            return
+        with self._write_lock:
+            self._connection.execute(
+                "INSERT INTO app_state (key, value) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value),
+            )
+            self._connection.commit()
+
+    def get_sessions_count(self) -> int:
+        """Return the total number of stored sessions."""
+        if not self._connection:
+            return 0
+        cursor = self._connection.execute("SELECT COUNT(*) AS cnt FROM sessions")
+        row = cursor.fetchone()
+        return row["cnt"] if row else 0
+
+    def delete_all_sessions(self) -> int:
+        """Delete all sessions. Returns the number of rows deleted."""
+        if not self._connection:
+            return 0
+        with self._write_lock:
+            cursor = self._connection.execute("DELETE FROM sessions")
+            deleted = cursor.rowcount
+            self._connection.commit()
+        logger.info("Deleted all %d sessions", deleted)
+        return deleted
 
     def delete_sessions_older_than(self, keep_latest: int = 10) -> int:
         """Delete sessions beyond the keep_latest count. Returns deleted count."""

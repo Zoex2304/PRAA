@@ -13,6 +13,7 @@ from src.domain.clipboard.service import TkinterClipboardService
 from src.domain.config.models import AppConfig, UIMode
 from src.domain.config.service import ConfigService
 from src.domain.config.theme_config import ThemeConfig
+from src.domain.dbmanager.service import DbManagerService
 from src.domain.hotkey.service import PynputHotkeyService
 from src.domain.ocr.capture import ScreenCaptureService
 from src.domain.ocr.overlay import OverlayController
@@ -58,6 +59,7 @@ class Application:
         self._orchestrator: Orchestrator | None = None
         self._db_manager: DatabaseManager | None = None
         self._session_service: SessionService | None = None
+        self._db_manager_service: DbManagerService | None = None
         self._log_handler: FletLogHandler | None = None
 
     def _init_services(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -68,6 +70,21 @@ class Application:
         self._db_manager = DatabaseManager(db_path)
         self._db_manager.connect()
         self._session_service = SessionService(self._db_manager, cache_dir)
+        self._db_manager_service = DbManagerService(self._db_manager, cache_dir)
+
+        # Check first-run state.
+        # Guard: if app_state table was just created but sessions already exist,
+        # this is an existing user — do not show splash.
+        first_run_val = self._db_manager.get_app_state("first_run")
+        if first_run_val is None:
+            if self._db_manager.get_sessions_count() > 0:
+                # Existing user — mark done silently
+                self._db_manager.set_app_state("first_run", "done")
+                is_first_run = False
+            else:
+                is_first_run = True
+        else:
+            is_first_run = False
 
         self._clipboard_service = TkinterClipboardService(self._event_bus)
         self._processor_service = ProcessorService(config, self._event_bus)
@@ -96,6 +113,12 @@ class Application:
         )
 
         if config.ui_mode == UIMode.WIDGET:
+            db_svc = self._db_manager_service
+
+            def mark_first_run_done():
+                if self._db_manager:
+                    self._db_manager.set_app_state("first_run", "done")
+
             self._widget_controller = WidgetController(
                 config=config,
                 theme=self._theme,
@@ -105,7 +128,15 @@ class Application:
                 audio_service=self._audio_service,
                 config_service=self._config_service,
                 activity_tracker=self._activity_tracker,
+                is_first_run=is_first_run,
+                on_first_run_complete=mark_first_run_done,
             )
+            # Wire DB manager callbacks into FletApp
+            if self._widget_controller and self._widget_controller.app:
+                app = self._widget_controller.app
+                app._get_db_stats = db_svc.get_stats
+                app._on_clear_cache = db_svc.clear_cache
+                app._on_flush_all = db_svc.flush_all
 
         self._orchestrator = Orchestrator(
             event_bus=self._event_bus,

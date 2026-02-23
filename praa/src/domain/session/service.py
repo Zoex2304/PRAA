@@ -29,6 +29,7 @@ class Session:
     audio_paths: List[str]  # List of absolute paths
     word_boundaries: Dict[str, Any]  # JSON dict
     config_snapshot: Dict[str, Any]
+    source_type: str = "USER_BLOCK"  # Origin: USER_BLOCK | OCR | FILE_UPLOAD
 
 
 class SessionService:
@@ -52,6 +53,7 @@ class SessionService:
         audio_paths: List[Path],
         word_boundaries: Dict[int, List[tuple]],
         config: Dict[str, Any],
+        source_type: str = "USER_BLOCK",
     ) -> Session:
         """
         Save a new session to DB and persist audio files to cache.
@@ -78,13 +80,13 @@ class SessionService:
             # 3. Insert into DB
             cursor = self._db.execute_write(
                 """
-                INSERT INTO sessions (timestamp, text_content, audio_paths, word_boundaries, config_snapshot)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO sessions (timestamp, text_content, audio_paths, word_boundaries, config_snapshot, source_type)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (timestamp, text, audio_json, boundaries_json, config_json)
+                (timestamp, text, audio_json, boundaries_json, config_json, source_type)
             )
             self._db.commit()
-            
+
             # 4. Update current session state
             session_id = cursor.lastrowid
             self._current_session = Session(
@@ -94,6 +96,7 @@ class SessionService:
                 audio_paths=cached_paths,
                 word_boundaries=word_boundaries,
                 config_snapshot=config,
+                source_type=source_type,
             )
             
             logger.info("Session saved: ID=%d, AudioFiles=%d", session_id, len(cached_paths))
@@ -139,6 +142,7 @@ class SessionService:
                     audio_paths=json.loads(row["audio_paths"]),
                     word_boundaries=json.loads(row["word_boundaries"]) if row["word_boundaries"] else {},
                     config_snapshot=json.loads(row["config_snapshot"]) if row["config_snapshot"] else {},
+                    source_type=row["source_type"] if row["source_type"] else "USER_BLOCK",
                 ))
             return sessions
         except Exception:

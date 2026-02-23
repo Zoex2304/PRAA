@@ -1,9 +1,3 @@
-"""
-Processor Domain — Orchestrator Service
-
-Coordinates the filter → cleaner → detector → chunker pipeline.
-Subscribes to TextCaptured events, publishes TextProcessed events.
-"""
 
 from __future__ import annotations
 
@@ -21,14 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 class ProcessorService:
-    """
-    Orchestrates the text processing pipeline.
-
-    Flow: raw text → filter (remove images/media/URLs) → clean (normalize) → detect language → chunk → publish
-
-    Each sub-component (filter, cleaner, detector, chunker) is an independent
-    class with its own responsibility (SRP). This service only coordinates.
-    """
 
     def __init__(
         self,
@@ -47,12 +33,6 @@ class ProcessorService:
         self._chunker = chunker or TextChunker()
 
     async def handle_text_captured(self, event: TextCaptured) -> None:
-        """
-        Process captured text through the full pipeline.
-
-        Args:
-            event: TextCaptured event with raw clipboard text.
-        """
         raw_text = event.raw_text
         preview = raw_text[:100].replace("\n", " ")
         logger.info(
@@ -106,7 +86,6 @@ class ProcessorService:
         )
 
     def _detect_language(self, text: str) -> DetectedLanguage:
-        """Detect language, respecting user's language preference override."""
         if self._config.language_preference == LanguagePreference.INDONESIAN:
             return DetectedLanguage.INDONESIAN
         elif self._config.language_preference == LanguagePreference.ENGLISH:
@@ -116,12 +95,6 @@ class ProcessorService:
             return self._detector.detect(text)
 
     async def handle_config_changed(self, event: ConfigChanged) -> None:
-        """
-        React to runtime config changes.
-
-        Reloads the config reference so subsequent text processing
-        uses the latest speed_rate, voice_id, and language_preference.
-        """
         if event.key in ("speed_rate", "voice_id", "voice_en",
                          "voice_gender", "language_preference", "max_chunk_length"):
             updated_data = self._config.model_dump()

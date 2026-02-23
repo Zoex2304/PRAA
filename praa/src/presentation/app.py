@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import flet as ft
 
@@ -12,12 +12,13 @@ from src.presentation.components.compact_bar_component import CompactBarComponen
 from src.presentation.components.compact_milestone_bar import CompactMilestoneBar
 from src.presentation.components.chunk_progress_component import ChunkProgressComponent
 from src.presentation.components.spectrum_component import SpectrumComponent
-from src.presentation.components.upload_section_component import UploadSectionComponent
+from src.presentation.components.splash_component import SplashComponent
 from src.presentation.navigation_controller import NavigationController, ViewType
 from src.presentation.pages.home_page import HomePage
 from src.presentation.pages.debug_page import DebugPage
 from src.presentation.pages.history_page import HistoryPage
 from src.presentation.pages.log_page import LogPage
+from src.presentation.pages.db_page import DbPage
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,13 @@ class FletApp:
         on_download_audio_requested: Optional[Callable[[List[Path]], None]] = None,
         on_download_save: Optional[Callable[[List[Path], Path], None]] = None,
         on_file_uploaded: Optional[Callable[[Path], None]] = None,
+        on_ocr_capture: Optional[Callable[[], None]] = None,
+        on_speed_change: Optional[Callable[[float], None]] = None,
+        get_db_stats: Optional[Callable[[], Dict]] = None,
+        on_clear_cache: Optional[Callable[[], int]] = None,
+        on_flush_all: Optional[Callable[[], Dict]] = None,
+        show_splash: bool = False,
+        on_splash_dismissed: Optional[Callable[[], None]] = None,
     ):
         self._theme = theme
         self._config = config
@@ -57,10 +65,17 @@ class FletApp:
         self._on_download_audio_requested = on_download_audio_requested
         self._on_download_save = on_download_save
         self._on_file_uploaded = on_file_uploaded
+        self._on_ocr_capture = on_ocr_capture
+        self._on_speed_change = on_speed_change
+        self._get_db_stats = get_db_stats
+        self._on_clear_cache = on_clear_cache
+        self._on_flush_all = on_flush_all
+        self._show_splash = show_splash
+        self._on_splash_dismissed = on_splash_dismissed
 
         self._page: Optional[ft.Page] = None
         self._expanded = False
-        self._phase = "idle"          # "idle" | "processing" | "playing"
+        self._phase = "idle"
         self._nav: Optional[NavigationController] = None
         self._pending_download_paths: List[Path] = []
 
@@ -73,14 +88,17 @@ class FletApp:
         self.debug: Optional[DebugPage] = None
         self.history: Optional[HistoryPage] = None
         self.logs: Optional[LogPage] = None
+        self.db: Optional[DbPage] = None
         self.compact_bar: Optional[CompactBarComponent] = None
         self.chunk_progress: Optional[ChunkProgressComponent] = None
 
         self._content_area: Optional[ft.Container] = None
         self._nav_bar: Optional[ft.Row] = None
         self._nav_buttons: dict[ViewType, ft.Container] = {}
-        self._upload_section: Optional[UploadSectionComponent] = None
         self._expanded_panel: Optional[ft.Column] = None
+
+        # Shared OCR nav button (expanded mode)
+        self._nav_ocr_btn: Optional[ft.IconButton] = None
 
     def setup(self, page: ft.Page) -> None:
         self._page = page
@@ -96,6 +114,8 @@ class FletApp:
         page.padding = 0
         page.spacing = 0
 
+        current_speed = self._config.speed_rate if self._config else 1.0
+
         # Singleton content controls
         self.compact_milestone = CompactMilestoneBar(self._theme)
         self.bar_spectrum = SpectrumComponent(self._theme, height=_BAR_SPECTRUM_HEIGHT)
@@ -109,6 +129,8 @@ class FletApp:
             on_seek_chunk=self._on_seek_chunk,
             on_seek_position=self._on_seek_position,
             on_download_requested=self._on_download_audio_requested,
+            on_speed_change=self._on_speed_change,
+            current_speed=current_speed,
         )
         self.debug = DebugPage(
             self._theme,
@@ -121,6 +143,12 @@ class FletApp:
             on_load_session=self._on_load_session,
         )
         self.logs = LogPage(self._theme)
+        self.db = DbPage(
+            self._theme,
+            get_stats=self._get_db_stats,
+            on_clear_cache=self._on_clear_cache,
+            on_flush_all=self._on_flush_all,
+        )
 
         self.compact_bar = CompactBarComponent(
             self._theme,
@@ -128,6 +156,7 @@ class FletApp:
             on_toggle_play=self._on_toggle_play,
             on_settings=self._open_settings,
             on_close=self._on_close,
+            on_ocr_capture=self._on_ocr_capture,
         )
         self.chunk_progress = ChunkProgressComponent(self._theme)
 
@@ -137,12 +166,22 @@ class FletApp:
         self._nav_buttons = {}
         nav_items = ft.Row(
             controls=[
-                self._nav_btn("Home",    ft.Icons.HOME,        ViewType.HOME,    selected=True),
-                self._nav_btn("Debug",   ft.Icons.BUG_REPORT,  ViewType.DEBUG),
-                self._nav_btn("History", ft.Icons.HISTORY,     ViewType.HISTORY),
-                self._nav_btn("Logs",    ft.Icons.TERMINAL,    ViewType.LOGS),
+                self._nav_btn("Home",    ft.Icons.HOME,          ViewType.HOME,    selected=True),
+                self._nav_btn("Debug",   ft.Icons.BUG_REPORT,    ViewType.DEBUG),
+                self._nav_btn("History", ft.Icons.HISTORY,       ViewType.HISTORY),
+                self._nav_btn("Logs",    ft.Icons.TERMINAL,      ViewType.LOGS),
+                self._nav_btn("Manage",  ft.Icons.STORAGE,       ViewType.MANAGE),
             ],
             spacing=0,
+        )
+
+        # Nav OCR button (visible when expanded)
+        self._nav_ocr_btn = ft.IconButton(
+            icon=ft.Icons.DOCUMENT_SCANNER,
+            icon_size=16,
+            icon_color=colors.text_muted,
+            tooltip="OCR capture (Ctrl+Shift+O)",
+            on_click=lambda _: self._on_ocr_capture() if self._on_ocr_capture else None,
         )
         upload_btn = ft.IconButton(
             icon=ft.Icons.UPLOAD_FILE,
@@ -152,24 +191,30 @@ class FletApp:
             on_click=self._open_upload_dialog,
         )
         self._nav_bar = ft.Row(
-            controls=[nav_items, upload_btn],
+            controls=[
+                nav_items,
+                ft.Row(controls=[self._nav_ocr_btn, upload_btn], spacing=0),
+            ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
-        self._upload_section = UploadSectionComponent(self._theme)
-
-        self._expanded_panel = ft.Column(
-            controls=[
-                self._nav_bar,
-                self._upload_section,
-                self._content_area,
-            ],
+        # Expanded panel: padded container — padding only applies in expanded layout,
+        # never in compact/snackbar mode where the bar must fill its height exactly.
+        _expanded_col = ft.Column(
+            controls=[self._nav_bar, self._content_area],
             spacing=2,
+            expand=True,
+        )
+        self._expanded_panel = ft.Container(
+            content=_expanded_col,
+            padding=ft.padding.only(left=6, right=6, bottom=6),
             expand=True,
             visible=False,
         )
 
+        # Root has NO padding — compact bar must fill the full inner height so its
+        # own vertical centering works correctly (snackbar layout).
         root = ft.Container(
             content=ft.Column(
                 controls=[
@@ -186,7 +231,19 @@ class FletApp:
         )
 
         self._nav.on_view_change(self._on_view_change)
-        page.add(root)
+
+        # Feature 6: first-run splash
+        if self._show_splash:
+            splash = SplashComponent(self._theme, on_dismiss=self._dismiss_splash)
+            self._splash_overlay = ft.Container(
+                content=splash,
+                expand=True,
+                bgcolor=self._theme.colors.bg_dark,
+            )
+            page.add(ft.Stack(controls=[root, self._splash_overlay], expand=True))
+        else:
+            self._splash_overlay = None
+            page.add(root)
 
     # ----------------------------------------------------------------
     # Phase management
@@ -278,20 +335,28 @@ class FletApp:
             self._page.run_task(self._do_save_dialog)
 
     # ----------------------------------------------------------------
-    # Upload record management
+    # Upload record management (routed through HomePage)
     # ----------------------------------------------------------------
 
     def add_upload_record(self, record) -> None:
-        if self._upload_section:
-            self._upload_section.add_record(record)
+        if self.home:
+            self.home.add_upload_record(record)
 
     def advance_upload_step(self, source_path: Path, step: int) -> None:
-        if self._upload_section:
-            self._upload_section.advance_card_step(source_path, step)
+        if self.home:
+            self.home.advance_upload_step(source_path, step)
 
     def complete_upload_card(self, source_path: Path) -> None:
-        if self._upload_section:
-            self._upload_section.complete_card(source_path)
+        if self.home:
+            self.home.complete_upload_card(source_path)
+
+    # ----------------------------------------------------------------
+    # Speed control
+    # ----------------------------------------------------------------
+
+    def update_speed_display(self, speed: float) -> None:
+        if self.home:
+            self.home.speed_control.set_speed(speed)
 
     # ----------------------------------------------------------------
     # Expand / Collapse
@@ -304,6 +369,8 @@ class FletApp:
         if self.compact_bar:
             self.compact_bar.set_bar_content(None)
             self.compact_bar.set_expand_icon(True)
+            # Feature 7: OCR button moves to navbar on expand
+            self.compact_bar.set_ocr_visible(False)
         self._update_expanded_home()
         self._apply_expand_state()
 
@@ -313,6 +380,8 @@ class FletApp:
         self._expanded = False
         if self.compact_bar:
             self.compact_bar.set_expand_icon(False)
+            # Feature 7: OCR button returns to compact bar on collapse
+            self.compact_bar.set_ocr_visible(True)
         self._update_bar_center()
         self._apply_expand_state()
 
@@ -330,7 +399,99 @@ class FletApp:
     # Internal helpers
     # ----------------------------------------------------------------
 
+    def _dismiss_splash(self) -> None:
+        if self._splash_overlay and self._page:
+            self._splash_overlay.visible = False
+            self._safe_update(self._splash_overlay)
+        if self._on_splash_dismissed:
+            self._on_splash_dismissed()
+
     async def _open_upload_dialog(self, _e=None) -> None:
+        """Feature 1: Show alert dialog before file picker."""
+        import asyncio
+
+        if not self._page:
+            return
+
+        colors = self._theme.colors
+        typo = self._theme.typography
+
+        decision: dict[str, bool] = {"done": False, "proceed": False}
+
+        def _on_proceed(_):
+            decision["proceed"] = True
+            decision["done"] = True
+            self._page.pop_dialog()
+
+        def _on_cancel(_):
+            decision["done"] = True
+            self._page.pop_dialog()
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            bgcolor=colors.bg_panel,
+            title=ft.Row(
+                controls=[
+                    ft.Icon(ft.Icons.UPLOAD_FILE, color=colors.accent, size=22),
+                    ft.Text(
+                        "Upload File",
+                        size=typo.font_size_sm,
+                        color=colors.text_primary,
+                        weight=ft.FontWeight.BOLD,
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            content=ft.Column(
+                controls=[
+                    ft.Text(
+                        "Supported formats:",
+                        size=typo.font_size_xs,
+                        color=colors.text_muted,
+                        weight=ft.FontWeight.BOLD,
+                    ),
+                    ft.Text(
+                        "• Documents: .txt  .md  .pdf  .docx\n"
+                        "• Images (OCR): .png  .jpg  .jpeg  .bmp",
+                        size=typo.font_size_xs,
+                        color=colors.text_dim,
+                    ),
+                    ft.Container(height=4),
+                    ft.Text(
+                        "The file will be read aloud using the current voice settings.",
+                        size=typo.font_size_xs,
+                        color=colors.text_muted,
+                        italic=True,
+                    ),
+                ],
+                spacing=6,
+                tight=True,
+                width=260,
+            ),
+            actions=[
+                ft.TextButton(
+                    "Cancel",
+                    on_click=_on_cancel,
+                    style=ft.ButtonStyle(color=colors.text_muted),
+                ),
+                ft.TextButton(
+                    "Proceed",
+                    on_click=_on_proceed,
+                    style=ft.ButtonStyle(color=colors.accent),
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._page.show_dialog(dlg)
+
+        # Yield until one of the action buttons is clicked
+        while not decision["done"]:
+            await asyncio.sleep(0.05)
+
+        if not decision["proceed"]:
+            return
+
         files = await ft.FilePicker().pick_files(
             dialog_title="Select a file to read aloud",
             file_type=ft.FilePickerFileType.CUSTOM,
@@ -525,10 +686,13 @@ class FletApp:
             ViewType.DEBUG:   self.debug,
             ViewType.HISTORY: self.history,
             ViewType.LOGS:    self.logs,
+            ViewType.MANAGE:  self.db,
         }
 
         if view == ViewType.HISTORY and self.history:
             self.history.refresh()
+        if view == ViewType.MANAGE and self.db:
+            self.db.refresh()
 
         self._content_area.content = page_map.get(view)
 

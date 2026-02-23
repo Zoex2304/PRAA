@@ -15,6 +15,7 @@ class CompactBarComponent(ft.Container):
         on_toggle_play: Optional[Callable] = None,
         on_settings: Optional[Callable] = None,
         on_close: Optional[Callable] = None,
+        on_ocr_capture: Optional[Callable] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -23,6 +24,7 @@ class CompactBarComponent(ft.Container):
         self._on_toggle_play = on_toggle_play
         self._on_settings = on_settings
         self._on_close = on_close
+        self._on_ocr_capture = on_ocr_capture
 
         self._status_icon = ft.Icon(
             ft.Icons.CIRCLE,
@@ -36,17 +38,26 @@ class CompactBarComponent(ft.Container):
             weight=ft.FontWeight.BOLD,
         )
 
-        # Center animated content slot — fades between idle / milestone / spectrum
+        # Center animated content slot — fades between idle / milestone / spectrum.
+        # In snackbar (compact) layout the slot expands between left status items
+        # and right action buttons; content is explicitly centered in both axes.
         self._idle_hint = ft.Text(
             "Select text → Ctrl+Shift+R",
             size=theme.typography.font_size_xs,
             color=theme.colors.text_dim,
             italic=True,
+            text_align=ft.TextAlign.CENTER,
         )
-        self._center_slot = ft.Container(content=self._idle_hint, expand=True, key="bar-idle")
+        self._center_slot = ft.Container(
+            content=self._idle_hint,
+            expand=True,
+            alignment=ft.alignment.Alignment(0, 0),
+            key="bar-idle",
+        )
         self._center_wrap = ft.Container(
             content=self._center_slot,
             expand=True,
+            alignment=ft.alignment.Alignment(0, 0),
             opacity=1.0,
             animate_opacity=ft.Animation(
                 duration=350,
@@ -77,6 +88,14 @@ class CompactBarComponent(ft.Container):
             on_click=lambda _: self._on_settings() if self._on_settings else None,
             visible=False,
         )
+        self._ocr_btn = ft.IconButton(
+            icon=ft.Icons.DOCUMENT_SCANNER,
+            icon_size=14,
+            icon_color=theme.colors.text_muted,
+            tooltip="OCR capture (Ctrl+Shift+O)",
+            on_click=lambda _: self._on_ocr_capture() if self._on_ocr_capture else None,
+            visible=False,
+        )
         self._close_btn = ft.IconButton(
             icon=ft.Icons.CLOSE,
             icon_size=14,
@@ -92,6 +111,7 @@ class CompactBarComponent(ft.Container):
                 self._expand_btn,
                 self._play_btn,
                 self._settings_btn,
+                self._ocr_btn,
                 self._close_btn,
             ],
             spacing=4,
@@ -107,18 +127,25 @@ class CompactBarComponent(ft.Container):
         self._expand_btn.visible = True
         self._play_btn.visible = True
         self._settings_btn.visible = True
+        self._ocr_btn.visible = True
         self._center_slot.content = None
         self._safe_update(self._expand_btn)
         self._safe_update(self._play_btn)
         self._safe_update(self._settings_btn)
+        self._safe_update(self._ocr_btn)
         self._safe_update(self._center_wrap)
+
+    def set_ocr_visible(self, visible: bool) -> None:
+        """Show or hide the bar OCR button (hidden when expanded, so OCR moves to navbar)."""
+        self._ocr_btn.visible = visible
+        self._safe_update(self._ocr_btn)
 
     def set_bar_content(self, control: ft.Control | None) -> None:
         self._center_wrap.opacity = 0.0
         self._safe_update(self._center_wrap)
 
         if control is None:
-            self._center_slot.content = None
+            self._center_slot.content = self._idle_hint
             self._center_slot.key = "bar-idle"
         else:
             self._center_slot.content = control

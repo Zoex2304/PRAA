@@ -4,16 +4,13 @@ import asyncio
 import io
 import logging
 import threading
-from typing import Optional
 
 from PIL import Image
 
-logger = logging.getLogger(__name__)
+from src.domain.ocr.config import CANDIDATE_LANGUAGES
+from src.domain.ocr.preprocessor import OcrPreprocessor
 
-_CANDIDATE_LANGUAGES = ("en-US", "id-ID", "en-GB")
-_SCALE_FACTOR = 2
-_MIN_DIM_PX = 100
-_MAX_DIM_PX = 4096
+logger = logging.getLogger(__name__)
 
 
 class OcrReaderService:
@@ -21,11 +18,12 @@ class OcrReaderService:
     def __init__(self) -> None:
         self._engine = None
         self._lock = threading.Lock()
+        self._preprocessor = OcrPreprocessor()
 
     def read(self, image: Image.Image) -> str:
         self._ensure_engine()
-        upscaled = self._preprocess(image)
-        return asyncio.run(self._recognize(upscaled))
+        processed = self._preprocessor.process(image)
+        return asyncio.run(self._recognize(processed))
 
     def _ensure_engine(self) -> None:
         if self._engine is not None:
@@ -35,7 +33,7 @@ class OcrReaderService:
                 return
             import winrt.windows.globalization as globalization
             import winrt.windows.media.ocr as ocr
-            for tag in _CANDIDATE_LANGUAGES:
+            for tag in CANDIDATE_LANGUAGES:
                 lang = globalization.Language(tag)
                 engine = ocr.OcrEngine.try_create_from_language(lang)
                 if engine is not None:
@@ -47,16 +45,6 @@ class OcrReaderService:
                 raise RuntimeError("No Windows OCR language pack available")
             self._engine = engine
             logger.info("Windows OCR engine ready (user profile language)")
-
-    def _preprocess(self, image: Image.Image) -> Image.Image:
-        w, h = image.size
-        new_w = max(_MIN_DIM_PX, w * _SCALE_FACTOR)
-        new_h = max(_MIN_DIM_PX, h * _SCALE_FACTOR)
-        if max(new_w, new_h) > _MAX_DIM_PX:
-            ratio = _MAX_DIM_PX / max(new_w, new_h)
-            new_w = int(new_w * ratio)
-            new_h = int(new_h * ratio)
-        return image.resize((new_w, new_h), Image.LANCZOS)
 
     async def _recognize(self, image: Image.Image) -> str:
         import winrt.windows.graphics.imaging as wgi

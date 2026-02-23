@@ -1,15 +1,3 @@
-"""
-Processor Domain — Content Filter
-
-Strips non-textual content from captured text:
-- Image references (markdown, HTML, data URIs)
-- Media file paths (.png, .jpg, .gif, etc.)
-- HTML media tags (<img>, <picture>, <figure>)
-- Browser copy-paste artifacts
-
-SINGLE RESPONSIBILITY: Identify and remove non-speech content.
-Does NOT normalize whitespace or format — that's TextCleaner's job.
-"""
 
 from __future__ import annotations
 
@@ -20,20 +8,6 @@ logger = logging.getLogger(__name__)
 
 
 class ContentFilter:
-    """
-    Removes non-textual content unsuitable for TTS narration.
-
-    Processes text to strip image references, media file paths,
-    HTML tags, data URIs, and other artifacts that appear when
-    users copy text from browsers or rich-text editors.
-
-    Processing order:
-    1. HTML tags and entities (structural noise)
-    2. Markdown image/link syntax
-    3. Data URIs and base64 blobs
-    4. Media file paths and URLs
-    5. Browser copy-paste artifacts
-    """
 
     # --- HTML ---
     _HTML_IMG_TAG = re.compile(
@@ -97,15 +71,6 @@ class ContentFilter:
     _MD_FORMATTING = re.compile(r"[*_~`#>\[\]!|]+")
 
     def filter(self, text: str) -> str:
-        """
-        Remove non-textual content from captured text.
-
-        Args:
-            text: Raw or semi-cleaned text that may contain media references.
-
-        Returns:
-            Text with all non-speech content removed.
-        """
         if not text or not text.strip():
             return ""
 

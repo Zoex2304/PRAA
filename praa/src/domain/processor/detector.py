@@ -1,9 +1,3 @@
-"""
-Processor Domain — lingua-based Language Detector
-
-Detects Indonesian vs English text using the lingua library.
-Defaults to Indonesian when confidence is low or detection is ambiguous.
-"""
 
 from __future__ import annotations
 
@@ -19,7 +13,6 @@ _detector = None
 
 
 def _get_detector():
-    """Lazily initialize the lingua detector (expensive operation)."""
     global _detector
     if _detector is None:
         try:
@@ -42,24 +35,8 @@ def _get_detector():
 
 
 class LanguageDetector:
-    """
-    Detects the primary language of input text.
-
-    Uses lingua with a focused ID+EN model for high accuracy
-    on the two target languages. Defaults to Indonesian when
-    confidence is insufficient.
-    """
 
     def detect(self, text: str) -> DetectedLanguage:
-        """
-        Detect the primary language of the text.
-
-        Args:
-            text: Input text to analyze.
-
-        Returns:
-            DetectedLanguage.INDONESIAN or DetectedLanguage.ENGLISH.
-        """
         if not text or not text.strip():
             return DetectedLanguage.INDONESIAN
 
