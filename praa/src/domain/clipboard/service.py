@@ -7,6 +7,7 @@ Zero-install, reliable on Windows. Publishes TextCaptured events.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import tkinter as tk
 
@@ -83,8 +84,6 @@ class TkinterClipboardService:
     def cleanup(self) -> None:
         """Destroy the hidden tkinter root window."""
         if self._root is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._root.destroy()
-            except Exception:
-                pass
             self._root = None

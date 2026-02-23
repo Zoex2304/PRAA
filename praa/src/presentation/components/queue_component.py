@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Callable, Optional
+import contextlib
+from collections.abc import Callable
 
 import flet as ft
 
@@ -15,12 +16,12 @@ def _fmt_ms(ms: float) -> str:
 
 _STATUS_CFG: dict[str, tuple[str, str, bool]] = {
     # status: (label, dot_color, playable)
-    "pending":    ("Pending",      "#334155", False),
+    "pending": ("Pending", "#334155", False),
     "processing": ("Synthesizing", "#f59e0b", False),
-    "ready":      ("Ready",        "#06b6d4", True),
-    "playing":    ("Playing",      "#22c55e", True),
-    "paused":     ("Paused",       "#eab308", True),
-    "done":       ("Done",         "#64748b", True),
+    "ready": ("Ready", "#06b6d4", True),
+    "playing": ("Playing", "#22c55e", True),
+    "paused": ("Paused", "#eab308", True),
+    "done": ("Done", "#64748b", True),
 }
 
 
@@ -30,8 +31,8 @@ class _QueueRow(ft.Container):
         theme: ThemeConfig,
         index: int,
         name: str,
-        on_play: Optional[Callable[[int], None]],
-        on_pause: Optional[Callable[[int], None]],
+        on_play: Callable[[int], None] | None,
+        on_pause: Callable[[int], None] | None,
     ):
         super().__init__()
         self._theme = theme
@@ -106,10 +107,8 @@ class _QueueRow(ft.Container):
             self._safe_update()
 
     def _safe_update(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.update()
-        except Exception:
-            pass
 
 
 class QueueComponent(ft.Container):
@@ -122,8 +121,8 @@ class QueueComponent(ft.Container):
     def __init__(
         self,
         theme: ThemeConfig,
-        on_play_chunk: Optional[Callable[[int], None]] = None,
-        on_pause_chunk: Optional[Callable[[int], None]] = None,
+        on_play_chunk: Callable[[int], None] | None = None,
+        on_pause_chunk: Callable[[int], None] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -194,7 +193,9 @@ class QueueComponent(ft.Container):
     def update_chunk_status(self, index: int, status: str, name: str = "") -> None:
         if index not in self._rows:
             row = _QueueRow(
-                self._theme, index, name,
+                self._theme,
+                index,
+                name,
                 on_play=self._on_play_chunk,
                 on_pause=self._on_pause_chunk,
             )
@@ -205,7 +206,9 @@ class QueueComponent(ft.Container):
             self._safe_update(self._list_col)
         self._rows[index].update_status(status, name)
 
-    def update_chunk_progress(self, index: int, current_ms: float, total_ms: float) -> None:
+    def update_chunk_progress(
+        self, index: int, current_ms: float, total_ms: float
+    ) -> None:
         if index in self._rows:
             self._rows[index].update_progress(current_ms, total_ms)
 
@@ -232,7 +235,5 @@ class QueueComponent(ft.Container):
         self._safe_update(self._detail)
 
     def _safe_update(self, control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

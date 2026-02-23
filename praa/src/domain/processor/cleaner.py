@@ -1,26 +1,24 @@
-
 from __future__ import annotations
 
-import re
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
 
 class TextCleaner:
-
     # Pre-compiled regex patterns for performance
     _EMOJI_PATTERN = re.compile(
         "["
-        "\U0001F600-\U0001F64F"  # Emoticons
-        "\U0001F300-\U0001F5FF"  # Symbols & pictographs
-        "\U0001F680-\U0001F6FF"  # Transport & map symbols
-        "\U0001F1E0-\U0001F1FF"  # Flags
-        "\U00002702-\U000027B0"  # Dingbats
-        "\U000024C2-\U0001F251"  # Enclosed characters
-        "\U0001F900-\U0001F9FF"  # Supplemental symbols
-        "\U0001FA00-\U0001FA6F"  # Chess symbols
-        "\U0001FA70-\U0001FAFF"  # Symbols extended-A
+        "\U0001f600-\U0001f64f"  # Emoticons
+        "\U0001f300-\U0001f5ff"  # Symbols & pictographs
+        "\U0001f680-\U0001f6ff"  # Transport & map symbols
+        "\U0001f1e0-\U0001f1ff"  # Flags
+        "\U00002702-\U000027b0"  # Dingbats
+        "\U000024c2-\U0001f251"  # Enclosed characters
+        "\U0001f900-\U0001f9ff"  # Supplemental symbols
+        "\U0001fa00-\U0001fa6f"  # Chess symbols
+        "\U0001fa70-\U0001faff"  # Symbols extended-A
         "]+",
         re.UNICODE,
     )

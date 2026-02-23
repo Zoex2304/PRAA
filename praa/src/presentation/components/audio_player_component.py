@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Callable, Optional
+import contextlib
+from collections.abc import Callable
 
 import flet as ft
 
@@ -19,8 +20,8 @@ class AudioPlayerComponent(ft.Container):
         self,
         theme: ThemeConfig,
         chunk_index: int,
-        on_play: Optional[Callable[[int], None]] = None,
-        on_pause: Optional[Callable[[int], None]] = None,
+        on_play: Callable[[int], None] | None = None,
+        on_pause: Callable[[int], None] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -71,7 +72,5 @@ class AudioPlayerComponent(ft.Container):
                 self._on_play(self._chunk_index)
 
     def _safe_update(self, control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

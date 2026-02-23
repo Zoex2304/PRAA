@@ -11,10 +11,11 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from src.domain.config.models import AppConfig, VoiceGender, LanguagePreference
+from src.domain.config.models import AppConfig, LanguagePreference, VoiceGender
 
 
 def test_default_config():
@@ -34,10 +35,10 @@ def test_speed_rate_validation():
     config = AppConfig(speed_rate=1.5)
     assert config.speed_rate == 1.5
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         AppConfig(speed_rate=0.1)  # Below minimum
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         AppConfig(speed_rate=3.0)  # Above maximum
 
 
@@ -49,7 +50,7 @@ def test_speed_rate_rounding():
 
 def test_invalid_voice_id():
     """Voice ID without 'Neural' should be rejected."""
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         AppConfig(voice_id="invalid-voice")
 
 

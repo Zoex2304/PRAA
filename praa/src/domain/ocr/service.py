@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
 
 from src.domain.ocr.capture import ScreenCaptureService
 from src.domain.ocr.config import CAPTURE_DELAY_S
@@ -21,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 
 class OcrService:
-
     def __init__(
         self,
         event_bus: EventBus,
@@ -42,7 +40,7 @@ class OcrService:
         logger.info("OCR capture requested — showing overlay")
         self._overlay.show(self._on_region_selected)
 
-    def _on_region_selected(self, region: Optional[Region]) -> None:
+    def _on_region_selected(self, region: Region | None) -> None:
         if region is None:
             logger.info("OCR overlay cancelled or drag too small")
             asyncio.run_coroutine_threadsafe(
@@ -67,7 +65,7 @@ class OcrService:
 
         await asyncio.sleep(CAPTURE_DELAY_S)
 
-        logger.info("OCR: capturing region (%d, %d, %d×%d)", x, y, w, h)
+        logger.info("OCR: capturing region (%d, %d, %dx%d)", x, y, w, h)
         try:
             image = self._capture.capture_region(x, y, w, h)
         except Exception:

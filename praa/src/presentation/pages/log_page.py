@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 
 import flet as ft
@@ -8,10 +9,10 @@ from src.domain.config.theme_config import ThemeConfig
 from src.infrastructure.flet_log_handler import LogEntry
 
 _LEVEL_COLORS = {
-    logging.DEBUG:    "#64748b",
-    logging.INFO:     "#94a3b8",
-    logging.WARNING:  "#f59e0b",
-    logging.ERROR:    "#ef4444",
+    logging.DEBUG: "#64748b",
+    logging.INFO: "#94a3b8",
+    logging.WARNING: "#f59e0b",
+    logging.ERROR: "#ef4444",
     logging.CRITICAL: "#dc2626",
 }
 
@@ -80,7 +81,5 @@ class LogPage(ft.Container):
         self.clear()
 
     def _safe_update(self, control: ft.Control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

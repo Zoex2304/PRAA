@@ -1,10 +1,8 @@
-
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
-from typing import Callable
 
 from pynput import keyboard
 
@@ -40,8 +38,9 @@ def _parse_hotkey(hotkey_str: str) -> frozenset[keyboard.Key | keyboard.KeyCode]
 
 
 class PynputHotkeyService:
-
-    def __init__(self, config: AppConfig, event_bus: EventBus, loop: asyncio.AbstractEventLoop) -> None:
+    def __init__(
+        self, config: AppConfig, event_bus: EventBus, loop: asyncio.AbstractEventLoop
+    ) -> None:
         self._event_bus = event_bus
         self._loop = loop
 

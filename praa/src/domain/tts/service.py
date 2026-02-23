@@ -26,8 +26,6 @@ logger = logging.getLogger(__name__)
 
 
 class EdgeTTSService:
-   
-
     def __init__(self, event_bus: EventBus) -> None:
         self._event_bus = event_bus
         self._temp_dir = Path(tempfile.mkdtemp(prefix="praa_tts_"))
@@ -39,7 +37,11 @@ class EdgeTTSService:
         text: str,
         voice: str,
         rate: float,
-    ) -> tuple[Path | None, list[tuple[float, float, str, int, int]], list[tuple[float, float, str]]]:
+    ) -> tuple[
+        Path | None,
+        list[tuple[float, float, str, int, int]],
+        list[tuple[float, float, str]],
+    ]:
         """
         Synthesize a single text chunk to a temp audio file.
 
@@ -51,7 +53,9 @@ class EdgeTTSService:
         """
         try:
             rate_str = self._format_rate(rate)
-            output_path = self._temp_dir / f"chunk_{id(text)}_{len(self._last_audio_paths)}.mp3"
+            output_path = (
+                self._temp_dir / f"chunk_{id(text)}_{len(self._last_audio_paths)}.mp3"
+            )
 
             communicate = edge_tts.Communicate(
                 text=text,
@@ -73,7 +77,7 @@ class EdgeTTSService:
                         duration_ms = chunk["duration"] / 10_000
                         word = chunk["text"]
                         word_boundaries.append((offset_ms, duration_ms, word))
-                        # logger.debug("Word boundary: %s", word) 
+                        # logger.debug("Word boundary: %s", word)
                     elif chunk["type"] == "SentenceBoundary":
                         # Capture sentences as fallback
                         offset_ms = chunk["offset"] / 10_000
@@ -81,8 +85,13 @@ class EdgeTTSService:
                         text_chunk = chunk["text"]
                         sentence_boundaries.append((offset_ms, duration_ms, text_chunk))
                         logger.debug("Sentence boundary captured: %s", text_chunk[:20])
-            
-            logger.info("Stream finished. Audio: %s bytes. Words: %d. Sentences: %d", output_path.stat().st_size, len(word_boundaries), len(sentence_boundaries))
+
+            logger.info(
+                "Stream finished. Audio: %s bytes. Words: %d. Sentences: %d",
+                output_path.stat().st_size,
+                len(word_boundaries),
+                len(sentence_boundaries),
+            )
             self._last_audio_paths.append(output_path)
 
             # Post-process to add text offsets (only for existing word boundaries)
@@ -90,7 +99,10 @@ class EdgeTTSService:
 
             logger.debug(
                 "Synthesized %d chars → %s (%d word boundaries, %d sentences)",
-                len(text), output_path.name, len(enhanced_boundaries), len(sentence_boundaries)
+                len(text),
+                output_path.name,
+                len(enhanced_boundaries),
+                len(sentence_boundaries),
             )
             return output_path, enhanced_boundaries, sentence_boundaries
 
@@ -108,7 +120,9 @@ class EdgeTTSService:
         total = len(event.chunks)
         logger.info(
             "Starting synthesis: %d chunks, voice=%s, rate=%s",
-            total, event.voice_id, event.speed_rate,
+            total,
+            event.voice_id,
+            event.speed_rate,
         )
 
         # Clear previous audio paths for new session
@@ -157,10 +171,9 @@ class EdgeTTSService:
         """Remove all temp audio files."""
         try:
             import shutil
+
             if self._temp_dir.exists():
                 shutil.rmtree(self._temp_dir, ignore_errors=True)
                 logger.info("TTS temp directory cleaned up")
         except Exception:
             logger.exception("Failed to clean up TTS temp directory")
-
-

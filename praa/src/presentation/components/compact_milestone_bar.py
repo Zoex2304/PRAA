@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+
 import flet as ft
 
 from src.domain.config.theme_config import ThemeConfig
@@ -53,7 +55,5 @@ class CompactMilestoneBar(ft.Container):
         self._safe_update(self._label)
 
     def _safe_update(self, control: ft.Control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

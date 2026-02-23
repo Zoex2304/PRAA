@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, List, Optional
 
 import flet as ft
 
@@ -9,17 +10,16 @@ from src.domain.config.theme_config import ThemeConfig
 
 
 class DownloadAudioComponent(ft.Container):
-
     def __init__(
         self,
         theme: ThemeConfig,
-        on_download_requested: Optional[Callable[[List[Path]], None]] = None,
+        on_download_requested: Callable[[list[Path]], None] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self._theme = theme
         self._on_download_requested = on_download_requested
-        self._audio_paths: List[Path] = []
+        self._audio_paths: list[Path] = []
 
         self._spinner = ft.ProgressRing(
             width=14,
@@ -52,7 +52,7 @@ class DownloadAudioComponent(ft.Container):
         self.visible = True
         self._safe_update(self)
 
-    def set_ready(self, audio_paths: List[Path]) -> None:
+    def set_ready(self, audio_paths: list[Path]) -> None:
         self._audio_paths = list(audio_paths)
         self._spinner.visible = False
         self._btn.visible = True
@@ -71,7 +71,5 @@ class DownloadAudioComponent(ft.Container):
             self._on_download_requested(list(self._audio_paths))
 
     def _safe_update(self, control: ft.Control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

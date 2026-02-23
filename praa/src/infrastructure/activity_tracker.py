@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -17,15 +16,6 @@ class ActivityEntry:
 
 
 class ActivityTracker:
-    """Thread-safe middleware that lets services report their current activity.
-
-    Services call ``report()`` whenever their state changes.
-    The debug UI polls ``get_all()`` on its refresh tick.
-
-    Design: intentionally decoupled — services depend on this tracker,
-    not on the UI layer. The UI layer reads without knowing the reporters.
-    """
-
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._activities: dict[str, ActivityEntry] = {}
@@ -47,6 +37,6 @@ class ActivityTracker:
         with self._lock:
             return dict(self._activities)
 
-    def get(self, component: str) -> Optional[ActivityEntry]:
+    def get(self, component: str) -> ActivityEntry | None:
         with self._lock:
             return self._activities.get(component)

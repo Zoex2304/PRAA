@@ -28,6 +28,7 @@ def _detect_dpi_scale() -> float:
     """
     try:
         import tkinter as _tk
+
         _root = _tk.Tk()
         _root.withdraw()
         tk_w = _root.winfo_screenwidth()
@@ -43,7 +44,9 @@ def _detect_dpi_scale() -> float:
         scale = phys_w / tk_w
         logger.info(
             "[CAPTURE] DPI scale detected: tk_screen_w=%d  mss_phys_w=%d  scale=%.3f",
-            tk_w, phys_w, scale,
+            tk_w,
+            phys_w,
+            scale,
         )
         return scale
     except Exception:
@@ -59,7 +62,6 @@ def _windows_dpi_scale() -> float:
 
 
 class ScreenCaptureService:
-
     def __init__(self, debug_writer: OcrDebugWriter) -> None:
         self._debug_writer = debug_writer
 
@@ -70,17 +72,21 @@ class ScreenCaptureService:
         pw = int(width * dpi)
         ph = int(height * dpi)
 
-        logger.debug("[CAPTURE] logical_region=(%d, %d, %d×%d)", x, y, width, height)
-        logger.debug("[CAPTURE] physical_region=(%d, %d, %d×%d)", px, py, pw, ph)
+        logger.debug("[CAPTURE] logical_region=(%d, %d, %dx%d)", x, y, width, height)
+        logger.debug("[CAPTURE] physical_region=(%d, %d, %dx%d)", px, py, pw, ph)
         logger.debug("[CAPTURE] dpi_scale_factor=%.2f", dpi)
 
         with mss.mss() as sct:
             logger.debug("[CAPTURE] mss_monitor_0=%s", sct.monitors[0])
             monitor = {"top": py, "left": px, "width": pw, "height": ph}
             screenshot = sct.grab(monitor)
-            image = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
+            image = Image.frombytes(
+                "RGB", screenshot.size, screenshot.bgra, "raw", "BGRX"
+            )
 
-        logger.debug("[CROP] raw_image_size=%d×%dpx  color_space=RGB", image.width, image.height)
+        logger.debug(
+            "[CROP] raw_image_size=%dx%dpx  color_space=RGB", image.width, image.height
+        )
         self._debug_writer.save(image, "01_raw_crop.png")
 
         return image

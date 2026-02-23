@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 
 class OcrReaderService:
-
     def __init__(self, debug_writer: OcrDebugWriter) -> None:
         self._ocr = None
         self._lock = threading.Lock()
@@ -49,11 +48,15 @@ class OcrReaderService:
                 "[CONFIG] SCALE_FACTOR=%d  PADDLE_LANG=%s"
                 "  DET_DB_THRESH=%.2f  DET_DB_BOX_THRESH=%.2f"
                 "  USE_GPU=%s  USE_ANGLE_CLS=%s",
-                SCALE_FACTOR, PADDLE_LANG,
-                PADDLE_DET_DB_THRESH, PADDLE_DET_DB_BOX_THRESH,
-                PADDLE_USE_GPU, PADDLE_USE_ANGLE_CLS,
+                SCALE_FACTOR,
+                PADDLE_LANG,
+                PADDLE_DET_DB_THRESH,
+                PADDLE_DET_DB_BOX_THRESH,
+                PADDLE_USE_GPU,
+                PADDLE_USE_ANGLE_CLS,
             )
             from paddleocr import PaddleOCR
+
             self._ocr = PaddleOCR(
                 use_angle_cls=PADDLE_USE_ANGLE_CLS,
                 lang=PADDLE_LANG,
@@ -69,7 +72,11 @@ class OcrReaderService:
             logger.info("PaddleOCR engine ready (lang=%s)", PADDLE_LANG)
 
     def _recognize(self, image: Image.Image) -> str:
-        logger.debug("[INFERENCE] input_image_size=%d×%dpx  color_space=RGB→BGR", image.width, image.height)
+        logger.debug(
+            "[INFERENCE] input_image_size=%dx%dpx  color_space=RGB→BGR",
+            image.width,
+            image.height,
+        )
         self._debug_writer.save(image, "04_pre_inference.png")
         img_array = np.array(image)[:, :, ::-1]
         result = self._ocr.ocr(img_array, cls=PADDLE_USE_ANGLE_CLS)
@@ -90,15 +97,23 @@ class OcrReaderService:
             tl, br = bbox[0], bbox[2]
             logger.debug(
                 "[PADDLE] line_%d: conf=%.3f  bbox=(%d,%d)→(%d,%d)  text=%r",
-                i, confidence, int(tl[0]), int(tl[1]), int(br[0]), int(br[1]), text,
+                i,
+                confidence,
+                int(tl[0]),
+                int(tl[1]),
+                int(br[0]),
+                int(br[1]),
+                text,
             )
             if confidence >= PADDLE_MIN_CONFIDENCE:
                 texts.append(text)
             else:
-                rejected.append("%r@conf=%.3f" % (text, confidence))
+                rejected.append(f"{text!r}@conf={confidence:.3f}")
 
         final = " ".join(texts).strip()
-        logger.debug("[OUTPUT] accepted_lines=%d / total_lines=%d", len(texts), len(lines))
+        logger.debug(
+            "[OUTPUT] accepted_lines=%d / total_lines=%d", len(texts), len(lines)
+        )
         if rejected:
             logger.debug("[OUTPUT] rejected_lines=%s", rejected)
         logger.debug("[OUTPUT] final_text=%r", final)

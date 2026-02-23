@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+
 import flet as ft
 
 from src.domain.config.theme_config import ThemeConfig
@@ -26,7 +28,7 @@ class ChunkProgressComponent(ft.Container):
         self._time_labels.clear()
         colors = self._theme.colors
 
-        for i in range(total_chunks):
+        for _i in range(total_chunks):
             label = ft.Text(
                 value="",
                 size=self._theme.typography.font_size_xs,
@@ -78,7 +80,5 @@ class ChunkProgressComponent(ft.Container):
         self._safe_update(self._row)
 
     def _safe_update(self, control):
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

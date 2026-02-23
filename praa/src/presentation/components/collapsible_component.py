@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Optional, Callable
+import contextlib
+from collections.abc import Callable
 
 import flet as ft
 
@@ -13,7 +14,7 @@ class CollapsibleComponent(ft.Container):
         theme: ThemeConfig,
         label: str,
         initial_value: str = "",
-        detail_builder: Optional[Callable] = None,
+        detail_builder: Callable | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -75,7 +76,9 @@ class CollapsibleComponent(ft.Container):
     def _toggle(self, _e=None):
         self._expanded = not self._expanded
         self._arrow.name = (
-            ft.Icons.KEYBOARD_ARROW_DOWN if self._expanded else ft.Icons.KEYBOARD_ARROW_RIGHT
+            ft.Icons.KEYBOARD_ARROW_DOWN
+            if self._expanded
+            else ft.Icons.KEYBOARD_ARROW_RIGHT
         )
         self._detail_container.visible = self._expanded
 
@@ -88,7 +91,5 @@ class CollapsibleComponent(ft.Container):
         self._safe_update(self._detail_container)
 
     def _safe_update(self, control):
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

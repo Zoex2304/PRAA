@@ -1,21 +1,24 @@
-
 from __future__ import annotations
 
 import logging
 
 from src.domain.config.models import AppConfig, LanguagePreference
-from src.domain.processor.cleaner import TextCleaner
 from src.domain.processor.chunker import TextChunker
+from src.domain.processor.cleaner import TextCleaner
 from src.domain.processor.content_filter import ContentFilter
 from src.domain.processor.detector import LanguageDetector
 from src.infrastructure.event_bus import EventBus
-from src.infrastructure.events import ConfigChanged, DetectedLanguage, TextCaptured, TextProcessed
+from src.infrastructure.events import (
+    ConfigChanged,
+    DetectedLanguage,
+    TextCaptured,
+    TextProcessed,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class ProcessorService:
-
     def __init__(
         self,
         config: AppConfig,
@@ -95,8 +98,14 @@ class ProcessorService:
             return self._detector.detect(text)
 
     async def handle_config_changed(self, event: ConfigChanged) -> None:
-        if event.key in ("speed_rate", "voice_id", "voice_en",
-                         "voice_gender", "language_preference", "max_chunk_length"):
+        if event.key in (
+            "speed_rate",
+            "voice_id",
+            "voice_en",
+            "voice_gender",
+            "language_preference",
+            "max_chunk_length",
+        ):
             updated_data = self._config.model_dump()
             updated_data[event.key] = event.new_value
             try:

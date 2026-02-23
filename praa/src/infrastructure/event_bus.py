@@ -1,22 +1,10 @@
-"""
-PRAA EventBus — Generic Typed Pub/Sub Dispatcher
-
-The backbone of the decoupled architecture. All inter-domain communication
-flows through this bus. No domain module calls another directly.
-
-Design decisions:
-- Thread-safe via asyncio event loop integration
-- Supports both sync and async handlers (auto-wrapped)
-- Type-based dispatch: subscribe to an event CLASS, receive instances of it
-- Handler isolation: one handler's failure does not block others
-"""
-
 from __future__ import annotations
 
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Any, Callable, Coroutine, Type, TypeVar
+from collections.abc import Callable, Coroutine
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -29,27 +17,11 @@ Handler = SyncHandler | AsyncHandler
 
 
 class EventBus:
-    """
-    Central event dispatcher using typed pub/sub pattern.
-
-    Usage:
-        bus = EventBus()
-        bus.subscribe(HotkeyPressed, my_handler)
-        await bus.publish(HotkeyPressed(action=HotkeyAction.READ))
-    """
-
     def __init__(self) -> None:
-        self._subscribers: dict[Type, list[Handler]] = defaultdict(list)
+        self._subscribers: dict[type, list[Handler]] = defaultdict(list)
         self._logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
-    def subscribe(self, event_type: Type[T], handler: Handler) -> None:
-        """
-        Register a handler for a specific event type.
-
-        Args:
-            event_type: The event class to subscribe to.
-            handler: Callable that accepts an instance of event_type.
-        """
+    def subscribe(self, event_type: type[T], handler: Handler) -> None:
         self._subscribers[event_type].append(handler)
         self._logger.debug(
             "Subscribed %s to %s",
@@ -57,8 +29,7 @@ class EventBus:
             event_type.__name__,
         )
 
-    def unsubscribe(self, event_type: Type[T], handler: Handler) -> None:
-        """Remove a handler from an event type's subscriber list."""
+    def unsubscribe(self, event_type: type[T], handler: Handler) -> None:
         try:
             self._subscribers[event_type].remove(handler)
             self._logger.debug(
@@ -74,15 +45,6 @@ class EventBus:
             )
 
     async def publish(self, event: Any) -> None:
-        """
-        Dispatch an event to all registered handlers of its type.
-
-        Each handler is invoked independently — one handler's exception
-        does not prevent other handlers from executing.
-
-        Args:
-            event: An instance of a registered event class.
-        """
         event_type = type(event)
         handlers = self._subscribers.get(event_type, [])
 
@@ -110,11 +72,9 @@ class EventBus:
                 )
 
     def clear(self) -> None:
-        """Remove all subscriptions. Used during shutdown or testing."""
         self._subscribers.clear()
         self._logger.debug("All subscriptions cleared")
 
     @property
     def subscriber_count(self) -> int:
-        """Total number of registered handler subscriptions."""
         return sum(len(handlers) for handlers in self._subscribers.values())

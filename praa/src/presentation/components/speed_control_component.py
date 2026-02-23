@@ -6,7 +6,8 @@ Compact +/- speed selector for real-time playback speed adjustment.
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+import contextlib
+from collections.abc import Callable
 
 import flet as ft
 
@@ -16,13 +17,13 @@ _SPEEDS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
 
 
 class SpeedControlComponent(ft.Row):
-    """Compact speed control: [−] [1.0x] [+]"""
+    """Compact speed control: [-] [1.0x] [+]"""
 
     def __init__(
         self,
         theme: ThemeConfig,
         current_speed: float = 1.0,
-        on_speed_change: Optional[Callable[[float], None]] = None,
+        on_speed_change: Callable[[float], None] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -95,7 +96,9 @@ class SpeedControlComponent(ft.Row):
             self._on_speed_change(speed)
 
     def _current_idx(self) -> int:
-        closest = min(range(len(_SPEEDS)), key=lambda i: abs(_SPEEDS[i] - self._current_speed))
+        closest = min(
+            range(len(_SPEEDS)), key=lambda i: abs(_SPEEDS[i] - self._current_speed)
+        )
         return closest
 
     @staticmethod
@@ -105,7 +108,5 @@ class SpeedControlComponent(ft.Row):
         return f"{speed:.2f}".rstrip("0") + "x"
 
     def _safe_update(self, control: ft.Control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

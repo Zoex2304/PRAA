@@ -18,6 +18,10 @@ from pathlib import Path
 
 from src.domain.audio.player import SoundDevicePlayer
 from src.domain.audio.queue import AudioQueue
+from src.domain.config.constants import (
+    AUDIO_DEQUEUE_TIMEOUT_S,
+    AUDIO_THREAD_JOIN_TIMEOUT_S,
+)
 from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import (
     HotkeyAction,
@@ -30,7 +34,6 @@ from src.infrastructure.events import (
     TrayAction,
     TrayActionType,
 )
-from src.domain.config.constants import AUDIO_DEQUEUE_TIMEOUT_S, AUDIO_THREAD_JOIN_TIMEOUT_S
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +64,7 @@ class AudioService:
         # Track chunk metadata for playback events
         self._chunk_meta: dict[str, tuple[int, int]] = {}  # path_str -> (index, total)
         self._current_chunk_idx: int = -1
-        
+
         # Duration tracking
         self._chunk_durations: dict[int, float] = {}  # index -> ms
         self._total_chunks: int = 0
@@ -93,7 +96,7 @@ class AudioService:
     def duration_ms(self) -> float:
         """Get total duration of current track in milliseconds."""
         return self._player.duration_ms
-        
+
     @property
     def current_position_global_ms(self) -> float:
         """Get global playback position across all chunks."""
@@ -103,18 +106,18 @@ class AudioService:
 
         if chunk_idx < 0:
             return 0.0
-            
+
         elapsed = 0.0
         for i in range(chunk_idx):
             elapsed += durations.get(i, 0.0)
-            
+
         return elapsed + self.position_ms
 
     @property
     def total_duration_ms(self) -> float:
         """
         Get estimated total duration of the session.
-        
+
         Uses actual duration for ready chunks and average duration
         for pending chunks to prevent UI jumps.
         """
@@ -124,19 +127,14 @@ class AudioService:
 
         if total == 0:
             return 0.0
-            
+
         known_duration = sum(durations.values())
         num_known = len(durations)
-        
+
         if num_known == total:
             return known_duration
-            
-        # Estimate remaining
-        if num_known > 0:
-            avg = known_duration / num_known
-        else:
-            avg = 20_000.0  # Default 20s per chunk estimate
-            
+
+        avg = known_duration / num_known if num_known > 0 else 20_000.0
         remaining = total - num_known
         return known_duration + (remaining * avg)
 
@@ -185,7 +183,7 @@ class AudioService:
         self._player.stop()
         self._queue.clear()
         self._queue.signal_done()
-        
+
         self._reset_chunk_state()
 
         if self._consumer_thread is not None:
@@ -220,16 +218,24 @@ class AudioService:
                 with self._meta_lock:
                     meta = self._chunk_meta.get(audio_path.name, (0, 1))
                     self._current_chunk_idx = meta[0]
-                
-                logger.debug("Starting playback for chunk %s/%s: %s", meta[0], meta[1], audio_path.name)
-                
-                # Define callback to capture exact start time
-                def on_start() -> None:
-                    self._publish_event(PlaybackStarted(
-                        chunk_index=meta[0],
-                        total_chunks=meta[1],
-                        timestamp=time.time()
-                    ))
+
+                logger.debug(
+                    "Starting playback for chunk %s/%s: %s",
+                    meta[0],
+                    meta[1],
+                    audio_path.name,
+                )
+
+                # Define callback to capture exact start time.
+                # meta=meta binds the loop variable by value (B023).
+                def on_start(meta=meta) -> None:
+                    self._publish_event(
+                        PlaybackStarted(
+                            chunk_index=meta[0],
+                            total_chunks=meta[1],
+                            timestamp=time.time(),
+                        )
+                    )
 
                 # Play the audio (blocks until done or stopped)
                 self._player.play(audio_path, on_start=on_start)
@@ -237,7 +243,7 @@ class AudioService:
                 # Publish completed event only if playback finished naturally
                 if not self._player.is_playing:
                     self._publish_event(PlaybackStopped(reason="completed"))
-                    
+
             except Exception:
                 logger.exception("Error in audio consumer loop")
 
@@ -286,28 +292,31 @@ class AudioService:
         """Enqueue a synthesized audio chunk for playback."""
         # Store chunk metadata under lock
         with self._meta_lock:
-            self._chunk_meta[event.audio_path.name] = (event.chunk_index, event.total_chunks)
+            self._chunk_meta[event.audio_path.name] = (
+                event.chunk_index,
+                event.total_chunks,
+            )
             self._total_chunks = event.total_chunks
-        
+
         # Calculate duration from boundaries if available
         duration = 0.0
         if event.word_boundaries:
             last = event.word_boundaries[-1]
-            duration = last[0] + last[1] 
+            duration = last[0] + last[1]
         elif event.sentence_boundaries:
             last = event.sentence_boundaries[-1]
             duration = last[0] + last[1]
-        
+
         if duration > 0:
             with self._meta_lock:
                 self._chunk_durations[event.chunk_index] = duration
-            
+
         self._queue.enqueue(event.audio_path)
         logger.debug(
             "Audio enqueued: chunk %d/%d (dur=%.2fs)",
             event.chunk_index + 1,
             event.total_chunks,
-            duration / 1000
+            duration / 1000,
         )
 
     async def handle_hotkey_stop(self, event: HotkeyPressed) -> None:

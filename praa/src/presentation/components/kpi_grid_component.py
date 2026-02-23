@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+
 import flet as ft
 
 from src.domain.config.theme_config import ThemeConfig
@@ -37,10 +39,8 @@ class _KpiTile(ft.Container):
 
     def set_value(self, value: str) -> None:
         self._value_text.value = value
-        try:
+        with contextlib.suppress(Exception):
             self._value_text.update()
-        except Exception:
-            pass
 
 
 class KpiGridComponent(ft.Container):
@@ -48,9 +48,9 @@ class KpiGridComponent(ft.Container):
 
     def __init__(self, theme: ThemeConfig, **kwargs):
         super().__init__(**kwargs)
-        self._rss     = _KpiTile(theme, "RSS")
-        self._vms     = _KpiTile(theme, "VMS")
-        self._pid     = _KpiTile(theme, "PID")
+        self._rss = _KpiTile(theme, "RSS")
+        self._vms = _KpiTile(theme, "VMS")
+        self._pid = _KpiTile(theme, "PID")
         self._threads = _KpiTile(theme, "Threads")
 
         self.content = ft.Row(

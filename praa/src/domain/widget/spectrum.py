@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import logging
@@ -7,18 +6,17 @@ import math
 import numpy as np
 
 from src.domain.config.constants import (
-    SPECTRUM_DB_FLOOR,
     SPECTRUM_DB_CEILING,
+    SPECTRUM_DB_FLOOR,
+    SPECTRUM_MIN_MAGNITUDE,
     SPECTRUM_SMOOTHING_ATTACK,
     SPECTRUM_SMOOTHING_DECAY,
-    SPECTRUM_MIN_MAGNITUDE,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class SpectrumAnalyzer:
-
     DB_FLOOR = SPECTRUM_DB_FLOOR
     DB_CEILING = SPECTRUM_DB_CEILING
     SMOOTHING_ATTACK = SPECTRUM_SMOOTHING_ATTACK
@@ -42,7 +40,9 @@ class SpectrumAnalyzer:
     def bars(self) -> list[float]:
         return self._prev_magnitudes.tolist()
 
-    def update(self, block: np.ndarray | None = None, samplerate: int = 24000) -> list[float]:
+    def update(
+        self, block: np.ndarray | None = None, samplerate: int = 24000
+    ) -> list[float]:
         if block is None or not self._active:
             # Decay to zero
             self._prev_magnitudes *= self.SMOOTHING_DECAY
@@ -71,7 +71,7 @@ class SpectrumAnalyzer:
             # Convert to dB scale
             db_values = self._to_db(band_magnitudes)
 
-            # Normalize to 0.0–1.0
+            # Normalize to 0.0-1.0
             normalized = self._normalize(db_values)
 
             # Smooth with previous frame
@@ -83,8 +83,6 @@ class SpectrumAnalyzer:
         except Exception:
             logger.debug("Spectrum analysis error", exc_info=True)
             return self._prev_magnitudes.tolist()
-
-
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -107,7 +105,7 @@ class SpectrumAnalyzer:
 
         if cache_key not in self._band_edges_cache:
             # Compute logarithmic band edges
-            min_freq = 60.0     # Hz — skip sub-bass (inaudible in speech)
+            min_freq = 60.0  # Hz — skip sub-bass (inaudible in speech)
             max_freq = min(samplerate / 2, 8000.0)  # Nyquist or 8kHz (speech range)
 
             # Logarithmic spacing
@@ -151,11 +149,15 @@ class SpectrumAnalyzer:
             if current[i] > self._prev_magnitudes[i]:
                 # Rising — use attack speed
                 alpha = 1.0 - self.SMOOTHING_ATTACK
-                result[i] = self._prev_magnitudes[i] + alpha * (current[i] - self._prev_magnitudes[i])
+                result[i] = self._prev_magnitudes[i] + alpha * (
+                    current[i] - self._prev_magnitudes[i]
+                )
             else:
                 # Falling — use decay speed
                 alpha = self.SMOOTHING_DECAY
-                result[i] = self._prev_magnitudes[i] + alpha * (current[i] - self._prev_magnitudes[i])
+                result[i] = self._prev_magnitudes[i] + alpha * (
+                    current[i] - self._prev_magnitudes[i]
+                )
         return result
 
     def reset(self) -> None:

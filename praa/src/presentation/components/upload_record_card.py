@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 import flet as ft
 
 from src.domain.config.theme_config import ThemeConfig
 from src.domain.upload.models import UploadRecord
-from src.presentation.components.vertical_stepper_component import StepConfig, VerticalStepperComponent
+from src.presentation.components.vertical_stepper_component import (
+    StepConfig,
+    VerticalStepperComponent,
+)
 
 _UPLOAD_STEPS = [
     StepConfig("File received"),
@@ -18,7 +22,6 @@ _UPLOAD_STEPS = [
 
 
 class UploadRecordCard(ft.Container):
-
     def __init__(self, theme: ThemeConfig, record: UploadRecord, **kwargs):
         super().__init__(**kwargs)
         self._theme = theme
@@ -29,7 +32,9 @@ class UploadRecordCard(ft.Container):
         typo = theme.typography
 
         self._stepper = VerticalStepperComponent(theme, _UPLOAD_STEPS)
-        self._arrow = ft.Icon(ft.Icons.KEYBOARD_ARROW_DOWN, size=13, color=colors.text_muted)
+        self._arrow = ft.Icon(
+            ft.Icons.KEYBOARD_ARROW_DOWN, size=13, color=colors.text_muted
+        )
 
         ext = record.source_path.suffix.lstrip(".").upper() or "FILE"
         type_label = "Image" if record.is_image else ext
@@ -105,7 +110,9 @@ class UploadRecordCard(ft.Container):
     def _toggle(self, _e=None) -> None:
         self._expanded = not self._expanded
         self._arrow.name = (
-            ft.Icons.KEYBOARD_ARROW_DOWN if self._expanded else ft.Icons.KEYBOARD_ARROW_RIGHT
+            ft.Icons.KEYBOARD_ARROW_DOWN
+            if self._expanded
+            else ft.Icons.KEYBOARD_ARROW_RIGHT
         )
         self._detail.visible = self._expanded
         self._safe_update(self._arrow)
@@ -119,7 +126,5 @@ class UploadRecordCard(ft.Container):
         return f"{size_bytes / (1024 * 1024):.1f} MB"
 
     def _safe_update(self, control: ft.Control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

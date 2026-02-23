@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import logging
@@ -30,6 +29,8 @@ def calculate_text_offsets(
             current_pos = idx + len(word_clean)
         else:
             # Fallback: use current position
-            enhanced.append((offset, duration, word_clean, current_pos, len(word_clean)))
+            enhanced.append(
+                (offset, duration, word_clean, current_pos, len(word_clean))
+            )
 
     return enhanced

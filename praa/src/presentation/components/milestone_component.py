@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import contextlib
+from dataclasses import dataclass
 from enum import Enum, auto
 
 import flet as ft
@@ -174,7 +175,5 @@ class MilestoneComponent(ft.Container):
         self._safe_update(self._detail_texts[idx])
 
     def _safe_update(self, control: ft.Control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

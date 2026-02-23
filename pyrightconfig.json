@@ -1,0 +1,6 @@
+{
+  "venvPath": "praa",
+  "venv": "venv",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "none"
+}

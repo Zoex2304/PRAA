@@ -5,7 +5,6 @@ Tests the end-to-end flow: raw text → cleaner → detector → chunker → Tex
 TTS is not tested here (requires network). This validates the event-driven pipeline wiring.
 """
 
-import asyncio
 import sys
 from pathlib import Path
 
@@ -13,10 +12,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from src.infrastructure.event_bus import EventBus
-from src.infrastructure.events import TextCaptured, TextProcessed, DetectedLanguage
 from src.domain.config.models import AppConfig
 from src.domain.processor.service import ProcessorService
+from src.infrastructure.event_bus import EventBus
+from src.infrastructure.events import TextCaptured, TextProcessed
 
 
 @pytest.fixture
@@ -66,7 +65,9 @@ async def test_pipeline_cleans_urls(processor, event_bus):
     event_bus.subscribe(TextProcessed, capture_result)
 
     await processor.handle_text_captured(
-        TextCaptured(raw_text="Visit https://example.com for more info about this topic")
+        TextCaptured(
+            raw_text="Visit https://example.com for more info about this topic"
+        )
     )
 
     assert len(results) == 1
@@ -86,8 +87,6 @@ async def test_pipeline_empty_after_cleaning(processor, event_bus):
     event_bus.subscribe(TextProcessed, capture_result)
 
     # Only a URL — should be empty after cleaning
-    await processor.handle_text_captured(
-        TextCaptured(raw_text="https://example.com")
-    )
+    await processor.handle_text_captured(TextCaptured(raw_text="https://example.com"))
 
     assert len(results) == 0

@@ -7,8 +7,9 @@ Run this script, then:
 3. Press Ctrl+Shift+R — check if it's detected.
 4. Press ESC to exit.
 """
-import sys
+
 import threading
+
 from pynput import keyboard
 
 print("=" * 50)
@@ -18,8 +19,8 @@ print("=" * 50)
 # ---- TEST 1: pystray tray icon ----
 print("\n[TEST 1] Tray Icon...")
 try:
-    from PIL import Image
     import pystray
+    from PIL import Image
 
     img = Image.new("RGB", (64, 64), (0, 200, 0))  # Green square
     icon = pystray.Icon("debug", img, "DEBUG TRAY")
@@ -42,6 +43,7 @@ print("  Press ESC to exit.\n")
 
 pressed_keys = set()
 
+
 def on_press(key):
     pressed_keys.add(key)
     # Print key info
@@ -62,11 +64,13 @@ def on_press(key):
         else:
             normalized.add(k)
 
-    target = frozenset({
-        keyboard.Key.ctrl_l,
-        keyboard.Key.shift,
-        keyboard.KeyCode.from_vk(82),  # 82 = ord('R'), matches by vk code
-    })
+    target = frozenset(
+        {
+            keyboard.Key.ctrl_l,
+            keyboard.Key.shift,
+            keyboard.KeyCode.from_vk(82),  # 82 = ord('R'), matches by vk code
+        }
+    )
 
     if target.issubset(normalized):
         print("\n  ✅ HOTKEY DETECTED: Ctrl+Shift+R matched!")
@@ -78,11 +82,13 @@ def on_press(key):
         if missing and len(pressed_keys) >= 2:
             print(f"     (Missing for hotkey: {missing})")
 
+
 def on_release(key):
     pressed_keys.discard(key)
     if key == keyboard.Key.esc:
         print("\nESC pressed — exiting.")
         return False
+
 
 with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
     listener.join()

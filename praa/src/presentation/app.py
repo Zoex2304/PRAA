@@ -1,24 +1,28 @@
 from __future__ import annotations
 
+import contextlib
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
 
 import flet as ft
 
 from src.domain.config.models import AppConfig
 from src.domain.config.theme_config import ThemeConfig
+from src.presentation.components.capture_actions_component import (
+    CaptureActionsComponent,
+)
+from src.presentation.components.chunk_progress_component import ChunkProgressComponent
 from src.presentation.components.compact_bar_component import CompactBarComponent
 from src.presentation.components.compact_milestone_bar import CompactMilestoneBar
-from src.presentation.components.chunk_progress_component import ChunkProgressComponent
 from src.presentation.components.spectrum_component import SpectrumComponent
 from src.presentation.components.splash_component import SplashComponent
 from src.presentation.navigation_controller import NavigationController, ViewType
-from src.presentation.pages.home_page import HomePage
+from src.presentation.pages.db_page import DbPage
 from src.presentation.pages.debug_page import DebugPage
 from src.presentation.pages.history_page import HistoryPage
+from src.presentation.pages.home_page import HomePage
 from src.presentation.pages.log_page import LogPage
-from src.presentation.pages.db_page import DbPage
 
 logger = logging.getLogger(__name__)
 
@@ -30,26 +34,28 @@ class FletApp:
     def __init__(
         self,
         theme: ThemeConfig,
-        config: Optional[AppConfig] = None,
+        config: AppConfig | None = None,
         get_sessions=None,
         on_load_session=None,
-        on_toggle_play: Optional[Callable] = None,
-        on_settings_voice: Optional[Callable[[str], None]] = None,
-        on_settings_language: Optional[Callable[[str], None]] = None,
-        on_play_chunk: Optional[Callable[[int], None]] = None,
-        on_pause_chunk: Optional[Callable[[int], None]] = None,
-        on_seek_chunk: Optional[Callable[[int], None]] = None,
-        on_seek_position: Optional[Callable[[int, float], None]] = None,
-        on_download_audio_requested: Optional[Callable[[List[Path]], None]] = None,
-        on_download_save: Optional[Callable[[List[Path], Path], None]] = None,
-        on_file_uploaded: Optional[Callable[[Path], None]] = None,
-        on_ocr_capture: Optional[Callable[[], None]] = None,
-        on_speed_change: Optional[Callable[[float], None]] = None,
-        get_db_stats: Optional[Callable[[], Dict]] = None,
-        on_clear_cache: Optional[Callable[[], int]] = None,
-        on_flush_all: Optional[Callable[[], Dict]] = None,
+        on_toggle_play: Callable | None = None,
+        on_settings_voice: Callable[[str], None] | None = None,
+        on_settings_language: Callable[[str], None] | None = None,
+        on_play_chunk: Callable[[int], None] | None = None,
+        on_pause_chunk: Callable[[int], None] | None = None,
+        on_seek_chunk: Callable[[int], None] | None = None,
+        on_seek_position: Callable[[int, float], None] | None = None,
+        on_download_audio_requested: Callable[[list[Path]], None] | None = None,
+        on_download_save: Callable[[list[Path], Path], None] | None = None,
+        on_file_uploaded: Callable[[Path], None] | None = None,
+        on_ocr_capture: Callable[[], None] | None = None,
+        on_speed_change: Callable[[float], None] | None = None,
+        get_db_stats: Callable[[], dict] | None = None,
+        on_clear_cache: Callable[[], int] | None = None,
+        on_flush_all: Callable[[], dict] | None = None,
         show_splash: bool = False,
-        on_splash_dismissed: Optional[Callable[[], None]] = None,
+        on_splash_dismissed: Callable[[], None] | None = None,
+        on_history_viewed: Callable[[], None] | None = None,
+        on_settings_opened: Callable[[], None] | None = None,
     ):
         self._theme = theme
         self._config = config
@@ -72,33 +78,34 @@ class FletApp:
         self._on_flush_all = on_flush_all
         self._show_splash = show_splash
         self._on_splash_dismissed = on_splash_dismissed
+        self._on_history_viewed = on_history_viewed
+        self._on_settings_opened = on_settings_opened
 
-        self._page: Optional[ft.Page] = None
+        self._page: ft.Page | None = None
         self._expanded = False
         self._phase = "idle"
-        self._nav: Optional[NavigationController] = None
-        self._pending_download_paths: List[Path] = []
+        self._nav: NavigationController | None = None
+        self._pending_download_paths: list[Path] = []
 
         # Singleton controls created in setup()
-        self.compact_milestone: Optional[CompactMilestoneBar] = None
-        self.bar_spectrum: Optional[SpectrumComponent] = None
-        self._home_spectrum: Optional[SpectrumComponent] = None
+        self.compact_milestone: CompactMilestoneBar | None = None
+        self.bar_spectrum: SpectrumComponent | None = None
+        self._home_spectrum: SpectrumComponent | None = None
 
-        self.home: Optional[HomePage] = None
-        self.debug: Optional[DebugPage] = None
-        self.history: Optional[HistoryPage] = None
-        self.logs: Optional[LogPage] = None
-        self.db: Optional[DbPage] = None
-        self.compact_bar: Optional[CompactBarComponent] = None
-        self.chunk_progress: Optional[ChunkProgressComponent] = None
+        self.home: HomePage | None = None
+        self.debug: DebugPage | None = None
+        self.history: HistoryPage | None = None
+        self.logs: LogPage | None = None
+        self.db: DbPage | None = None
+        self.compact_bar: CompactBarComponent | None = None
+        self.chunk_progress: ChunkProgressComponent | None = None
 
-        self._content_area: Optional[ft.Container] = None
-        self._nav_bar: Optional[ft.Row] = None
+        self._content_area: ft.Container | None = None
+        self._nav_bar: ft.Row | None = None
         self._nav_buttons: dict[ViewType, ft.Container] = {}
-        self._expanded_panel: Optional[ft.Column] = None
+        self._expanded_panel: ft.Column | None = None
 
-        # Shared OCR nav button (expanded mode)
-        self._nav_ocr_btn: Optional[ft.IconButton] = None
+        self._nav_actions: CaptureActionsComponent | None = None
 
     def setup(self, page: ft.Page) -> None:
         self._page = page
@@ -119,7 +126,9 @@ class FletApp:
         # Singleton content controls
         self.compact_milestone = CompactMilestoneBar(self._theme)
         self.bar_spectrum = SpectrumComponent(self._theme, height=_BAR_SPECTRUM_HEIGHT)
-        self._home_spectrum = SpectrumComponent(self._theme, height=_HOME_SPECTRUM_HEIGHT)
+        self._home_spectrum = SpectrumComponent(
+            self._theme, height=_HOME_SPECTRUM_HEIGHT
+        )
 
         self.home = HomePage(
             self._theme,
@@ -157,44 +166,32 @@ class FletApp:
             on_settings=self._open_settings,
             on_close=self._on_close,
             on_ocr_capture=self._on_ocr_capture,
+            on_upload=self._open_upload_dialog,
         )
         self.chunk_progress = ChunkProgressComponent(self._theme)
 
         self._content_area = ft.Container(content=self.home, expand=True)
 
-        colors = self._theme.colors
         self._nav_buttons = {}
         nav_items = ft.Row(
             controls=[
-                self._nav_btn("Home",    ft.Icons.HOME,          ViewType.HOME,    selected=True),
-                self._nav_btn("Debug",   ft.Icons.BUG_REPORT,    ViewType.DEBUG),
-                self._nav_btn("History", ft.Icons.HISTORY,       ViewType.HISTORY),
-                self._nav_btn("Logs",    ft.Icons.TERMINAL,      ViewType.LOGS),
-                self._nav_btn("Manage",  ft.Icons.STORAGE,       ViewType.MANAGE),
+                self._nav_btn("Home", ft.Icons.HOME, ViewType.HOME, selected=True),
+                self._nav_btn("Debug", ft.Icons.BUG_REPORT, ViewType.DEBUG),
+                self._nav_btn("History", ft.Icons.HISTORY, ViewType.HISTORY),
+                self._nav_btn("Logs", ft.Icons.TERMINAL, ViewType.LOGS),
+                self._nav_btn("Manage", ft.Icons.STORAGE, ViewType.MANAGE),
             ],
             spacing=0,
         )
 
-        # Nav OCR button (visible when expanded)
-        self._nav_ocr_btn = ft.IconButton(
-            icon=ft.Icons.DOCUMENT_SCANNER,
+        self._nav_actions = CaptureActionsComponent(
+            self._theme,
+            on_ocr_capture=self._on_ocr_capture,
+            on_upload=self._open_upload_dialog,
             icon_size=16,
-            icon_color=colors.text_muted,
-            tooltip="OCR capture (Ctrl+Shift+O)",
-            on_click=lambda _: self._on_ocr_capture() if self._on_ocr_capture else None,
-        )
-        upload_btn = ft.IconButton(
-            icon=ft.Icons.UPLOAD_FILE,
-            icon_size=16,
-            icon_color=colors.text_muted,
-            tooltip="Upload file",
-            on_click=self._open_upload_dialog,
         )
         self._nav_bar = ft.Row(
-            controls=[
-                nav_items,
-                ft.Row(controls=[self._nav_ocr_btn, upload_btn], spacing=0),
-            ],
+            controls=[nav_items, self._nav_actions],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
@@ -232,14 +229,21 @@ class FletApp:
 
         self._nav.on_view_change(self._on_view_change)
 
-        # Feature 6: first-run splash
+        # First-run splash: expand window to full height, then place splash on top
+        # of root in a Stack.  Wrapped in WindowDragArea so the whole panel drags.
         if self._show_splash:
             splash = SplashComponent(self._theme, on_dismiss=self._dismiss_splash)
-            self._splash_overlay = ft.Container(
-                content=splash,
+            self._splash_overlay = ft.WindowDragArea(
+                content=ft.Container(
+                    content=splash,
+                    expand=True,
+                    bgcolor=self._theme.colors.bg_dark,
+                    border_radius=12,
+                    border=ft.border.all(1, self._theme.colors.border_subtle),
+                ),
                 expand=True,
-                bgcolor=self._theme.colors.bg_dark,
             )
+            page.window.height = self._theme.dimensions.expanded_height
             page.add(ft.Stack(controls=[root, self._splash_overlay], expand=True))
         else:
             self._splash_overlay = None
@@ -295,7 +299,9 @@ class FletApp:
         if self.debug:
             self.debug.update_chunk_status(index, status, name)
 
-    def update_queue_progress(self, index: int, current_ms: float, total_ms: float) -> None:
+    def update_queue_progress(
+        self, index: int, current_ms: float, total_ms: float
+    ) -> None:
         if self.home:
             self.home.queue.update_chunk_progress(index, current_ms, total_ms)
             self.home.timeline.update_playback(index, current_ms, total_ms)
@@ -321,7 +327,7 @@ class FletApp:
         if self.home:
             self.home.set_audio_pending()
 
-    def set_audio_ready(self, paths: List[Path]) -> None:
+    def set_audio_ready(self, paths: list[Path]) -> None:
         if self.home:
             self.home.set_audio_ready(paths)
 
@@ -329,7 +335,7 @@ class FletApp:
         if self.home:
             self.home.reset_audio()
 
-    def save_audio_dialog(self, paths: List[Path]) -> None:
+    def save_audio_dialog(self, paths: list[Path]) -> None:
         self._pending_download_paths = list(paths)
         if self._page:
             self._page.run_task(self._do_save_dialog)
@@ -369,8 +375,7 @@ class FletApp:
         if self.compact_bar:
             self.compact_bar.set_bar_content(None)
             self.compact_bar.set_expand_icon(True)
-            # Feature 7: OCR button moves to navbar on expand
-            self.compact_bar.set_ocr_visible(False)
+            self.compact_bar.set_molecule_visible(False)
         self._update_expanded_home()
         self._apply_expand_state()
 
@@ -380,8 +385,7 @@ class FletApp:
         self._expanded = False
         if self.compact_bar:
             self.compact_bar.set_expand_icon(False)
-            # Feature 7: OCR button returns to compact bar on collapse
-            self.compact_bar.set_ocr_visible(True)
+            self.compact_bar.set_molecule_visible(True)
         self._update_bar_center()
         self._apply_expand_state()
 
@@ -395,16 +399,30 @@ class FletApp:
             self._page.window.visible = False
             self._page.update()
 
+    def dismiss_splash(self) -> None:
+        """Idempotent public alias — safe to call multiple times."""
+        self._dismiss_splash_ui()
+
     # ----------------------------------------------------------------
     # Internal helpers
     # ----------------------------------------------------------------
 
     def _dismiss_splash(self) -> None:
-        if self._splash_overlay and self._page:
-            self._splash_overlay.visible = False
-            self._safe_update(self._splash_overlay)
+        """Called by SplashComponent 'Get Started' button."""
+        self._dismiss_splash_ui()
         if self._on_splash_dismissed:
             self._on_splash_dismissed()
+
+    def _dismiss_splash_ui(self) -> None:
+        """Hide the splash overlay and shrink the window back to compact height."""
+        if not self._splash_overlay or not self._page:
+            return
+        if not self._splash_overlay.visible:
+            return  # Already dismissed
+        self._splash_overlay.visible = False
+        self._safe_update(self._splash_overlay)
+        self._page.window.height = self._theme.dimensions.compact_height
+        self._page.update()
 
     async def _open_upload_dialog(self, _e=None) -> None:
         """Feature 1: Show alert dialog before file picker."""
@@ -495,7 +513,16 @@ class FletApp:
         files = await ft.FilePicker().pick_files(
             dialog_title="Select a file to read aloud",
             file_type=ft.FilePickerFileType.CUSTOM,
-            allowed_extensions=["txt", "md", "pdf", "docx", "png", "jpg", "jpeg", "bmp"],
+            allowed_extensions=[
+                "txt",
+                "md",
+                "pdf",
+                "docx",
+                "png",
+                "jpg",
+                "jpeg",
+                "bmp",
+            ],
             allow_multiple=False,
         )
         if files and self._on_file_uploaded:
@@ -506,7 +533,11 @@ class FletApp:
     async def _do_save_dialog(self) -> None:
         if not self._pending_download_paths:
             return
-        name = "praa_audio.wav" if len(self._pending_download_paths) == 1 else "praa_audio_merged.wav"
+        name = (
+            "praa_audio.wav"
+            if len(self._pending_download_paths) == 1
+            else "praa_audio_merged.wav"
+        )
         save_path = await ft.FilePicker().save_file(
             dialog_title="Save audio",
             file_name=name,
@@ -561,19 +592,61 @@ class FletApp:
             self._page.window.visible = False
             self._page.update()
 
+    def show_tip(self, text: str, on_skip, on_understand) -> None:
+        """Display a user-tip banner. Auto-expands if the widget is collapsed."""
+        if not self._expanded:
+            self.expand()
+        if not self._page:
+            return
+        colors = self._theme.colors
+        typo = self._theme.typography
+
+        def _skip(_):
+            self._page.pop_dialog()
+            on_skip()
+
+        def _understand(_):
+            self._page.pop_dialog()
+            on_understand()
+
+        banner = ft.Banner(
+            bgcolor=colors.bg_panel,
+            leading=ft.Icon(ft.Icons.TIPS_AND_UPDATES, color=colors.accent, size=20),
+            content=ft.Text(
+                text,
+                size=typo.font_size_xs,
+                color=colors.text_primary,
+            ),
+            actions=[
+                ft.TextButton(
+                    "Skip tips",
+                    on_click=_skip,
+                    style=ft.ButtonStyle(color=colors.text_muted),
+                ),
+                ft.TextButton(
+                    "Got it",
+                    on_click=_understand,
+                    style=ft.ButtonStyle(color=colors.accent),
+                ),
+            ],
+            force_actions_below=True,
+        )
+        self._page.show_dialog(banner)
+
     def _open_settings(self) -> None:
+        if not self._expanded:
+            self.expand()
         if not self._page or not self._config:
             return
         colors = self._theme.colors
         typo = self._theme.typography
 
-        from src.domain.config.voices_config import VOICE_CATALOG, LANGUAGE_OPTIONS
+        from src.domain.config.voices_config import LANGUAGE_OPTIONS, VOICE_CATALOG
 
         def voice_tile(v) -> ft.ListTile:
             selected = (
-                (v.language_code == "id" and v.voice_id == self._config.voice_id)
-                or (v.language_code == "en" and v.voice_id == self._config.voice_en)
-            )
+                v.language_code == "id" and v.voice_id == self._config.voice_id
+            ) or (v.language_code == "en" and v.voice_id == self._config.voice_en)
             return ft.ListTile(
                 leading=ft.Icon(
                     ft.Icons.RADIO_BUTTON_ON if selected else ft.Icons.RADIO_BUTTON_OFF,
@@ -585,7 +658,9 @@ class FletApp:
                     size=typo.font_size_sm,
                     color=colors.text_primary if selected else colors.text_dim,
                 ),
-                subtitle=ft.Text(v.gender_label, size=typo.font_size_xs, color=colors.text_muted),
+                subtitle=ft.Text(
+                    v.gender_label, size=typo.font_size_xs, color=colors.text_muted
+                ),
                 dense=True,
                 on_click=lambda _, vid=v.voice_id: self._handle_voice(vid),
             )
@@ -609,7 +684,12 @@ class FletApp:
 
         def section_hdr(text: str) -> ft.Container:
             return ft.Container(
-                content=ft.Text(text, size=typo.font_size_xs, color=colors.text_muted, weight=ft.FontWeight.BOLD),
+                content=ft.Text(
+                    text,
+                    size=typo.font_size_xs,
+                    color=colors.text_muted,
+                    weight=ft.FontWeight.BOLD,
+                ),
                 padding=ft.padding.only(left=8, top=8, bottom=2),
             )
 
@@ -619,7 +699,7 @@ class FletApp:
                 *[voice_tile(v) for v in VOICE_CATALOG],
                 ft.Divider(height=1, color=colors.border_subtle),
                 section_hdr("Language"),
-                *[lang_tile(l) for l in LANGUAGE_OPTIONS],
+                *[lang_tile(lang) for lang in LANGUAGE_OPTIONS],
             ],
             spacing=0,
             tight=True,
@@ -630,11 +710,24 @@ class FletApp:
         self._settings_dlg = ft.AlertDialog(
             modal=False,
             bgcolor=colors.bg_panel,
-            title=ft.Text("Settings", size=typo.font_size_sm, color=colors.text_primary, weight=ft.FontWeight.BOLD),
+            title=ft.Text(
+                "Settings",
+                size=typo.font_size_sm,
+                color=colors.text_primary,
+                weight=ft.FontWeight.BOLD,
+            ),
             content=content,
-            actions=[ft.TextButton("Close", on_click=lambda _: self._page.pop_dialog(), style=ft.ButtonStyle(color=colors.accent))],
+            actions=[
+                ft.TextButton(
+                    "Close",
+                    on_click=lambda _: self._page.pop_dialog(),
+                    style=ft.ButtonStyle(color=colors.accent),
+                )
+            ],
         )
         self._page.show_dialog(self._settings_dlg)
+        if self._on_settings_opened:
+            self._on_settings_opened()
 
     def _handle_voice(self, voice_id: str) -> None:
         if self._on_settings_voice:
@@ -682,15 +775,17 @@ class FletApp:
             return
 
         page_map = {
-            ViewType.HOME:    self.home,
-            ViewType.DEBUG:   self.debug,
+            ViewType.HOME: self.home,
+            ViewType.DEBUG: self.debug,
             ViewType.HISTORY: self.history,
-            ViewType.LOGS:    self.logs,
-            ViewType.MANAGE:  self.db,
+            ViewType.LOGS: self.logs,
+            ViewType.MANAGE: self.db,
         }
 
         if view == ViewType.HISTORY and self.history:
             self.history.refresh()
+            if self._on_history_viewed:
+                self._on_history_viewed()
         if view == ViewType.MANAGE and self.db:
             self.db.refresh()
 
@@ -712,7 +807,5 @@ class FletApp:
     def _safe_update(self, control) -> None:
         if control is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

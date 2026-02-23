@@ -9,12 +9,13 @@ _DOCX_EXTS = frozenset({".docx"})
 
 
 class FileTextExtractor:
-
     def is_image(self, path: Path) -> bool:
         return path.suffix.lower() in _IMAGE_EXTS
 
     def is_supported(self, path: Path) -> bool:
-        return path.suffix.lower() in (_IMAGE_EXTS | _TEXT_EXTS | _PDF_EXTS | _DOCX_EXTS)
+        return path.suffix.lower() in (
+            _IMAGE_EXTS | _TEXT_EXTS | _PDF_EXTS | _DOCX_EXTS
+        )
 
     def extract_text(self, path: Path) -> str:
         ext = path.suffix.lower()
@@ -28,10 +29,12 @@ class FileTextExtractor:
 
     def _extract_pdf(self, path: Path) -> str:
         from pypdf import PdfReader
+
         reader = PdfReader(str(path))
         return "\n".join(page.extract_text() or "" for page in reader.pages)
 
     def _extract_docx(self, path: Path) -> str:
         from docx import Document
+
         doc = Document(str(path))
         return "\n".join(p.text for p in doc.paragraphs if p.text.strip())

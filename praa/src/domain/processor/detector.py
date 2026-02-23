@@ -1,8 +1,6 @@
-
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
 
 from src.infrastructure.events import DetectedLanguage
 
@@ -35,7 +33,6 @@ def _get_detector():
 
 
 class LanguageDetector:
-
     def detect(self, text: str) -> DetectedLanguage:
         if not text or not text.strip():
             return DetectedLanguage.INDONESIAN

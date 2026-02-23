@@ -78,9 +78,7 @@ def test_clean_text_passthrough():
 def test_mixed_noise():
     """Mixed noise (URLs + emojis + markdown) should all be cleaned."""
     cleaner = TextCleaner()
-    result = cleaner.clean(
-        "Check https://example.com 😊 this is **great** stuff"
-    )
+    result = cleaner.clean("Check https://example.com 😊 this is **great** stuff")
     assert "https" not in result
     assert "😊" not in result
     assert "great" in result

@@ -7,26 +7,28 @@ Validated at startup, serializable to/from JSON.
 
 from __future__ import annotations
 
-from enum import Enum
-from typing import Literal
-
-
-class UIMode(str, Enum):
-    """Application UI mode."""
-    WIDGET = "widget"
-    SILENT = "silent"
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
 
-class VoiceGender(str, Enum):
+class UIMode(StrEnum):
+    """Application UI mode."""
+
+    WIDGET = "widget"
+    SILENT = "silent"
+
+
+class VoiceGender(StrEnum):
     """Available voice gender options."""
+
     MALE = "male"
     FEMALE = "female"
 
 
-class LanguagePreference(str, Enum):
+class LanguagePreference(StrEnum):
     """Language detection behavior."""
+
     AUTO = "auto"
     INDONESIAN = "id"
     ENGLISH = "en"

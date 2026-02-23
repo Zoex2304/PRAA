@@ -15,11 +15,15 @@ logger = logging.getLogger(__name__)
 
 
 class OcrPreprocessor:
-
     def process(self, image: Image.Image) -> Image.Image:
         padded = ImageOps.expand(image, border=BORDER_PADDING_PX, fill=(255, 255, 255))
         scaled = self._scale(padded)
-        logger.debug("[SCALE] scale_factor=%d  result=%d×%dpx", SCALE_FACTOR, scaled.width, scaled.height)
+        logger.debug(
+            "[SCALE] scale_factor=%d  result=%dx%dpx",
+            SCALE_FACTOR,
+            scaled.width,
+            scaled.height,
+        )
         return scaled
 
     def _scale(self, image: Image.Image) -> Image.Image:

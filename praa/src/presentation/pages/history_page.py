@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import logging
-from typing import Optional
+from collections.abc import Callable
+from typing import Any
 
 import flet as ft
 
@@ -14,8 +16,8 @@ class HistoryPage(ft.Container):
     def __init__(
         self,
         theme: ThemeConfig,
-        get_sessions: Optional[callable] = None,
-        on_load_session: Optional[callable] = None,
+        get_sessions: Callable[..., Any] | None = None,
+        on_load_session: Callable[..., Any] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -105,7 +107,9 @@ class HistoryPage(ft.Container):
                                     text_style=ft.TextStyle(
                                         size=self._theme.typography.font_size_xs,
                                     ),
-                                    padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                                    padding=ft.padding.symmetric(
+                                        horizontal=8, vertical=2
+                                    ),
                                 ),
                                 on_click=lambda _, s=session: self._handle_load(s),
                             ),
@@ -128,14 +132,15 @@ class HistoryPage(ft.Container):
     def _source_chip(self, source_type: str) -> ft.Container:
         typo = self._theme.typography
         cfg = {
-            "OCR":         ("OCR",      "#3b82f6", "#1e3a5f"),
-            "FILE_UPLOAD": ("File",     "#22c55e", "#14532d"),
-            "USER_BLOCK":  ("Clip",     "#6b7280", "#1f2937"),
+            "OCR": ("OCR", "#3b82f6", "#1e3a5f"),
+            "FILE_UPLOAD": ("File", "#22c55e", "#14532d"),
+            "USER_BLOCK": ("Clip", "#6b7280", "#1f2937"),
         }
         label, fg, bg = cfg.get(source_type, ("?", "#6b7280", "#1f2937"))
         return ft.Container(
-            content=ft.Text(label, size=typo.font_size_xs - 1, color=fg,
-                            weight=ft.FontWeight.BOLD),
+            content=ft.Text(
+                label, size=typo.font_size_xs - 1, color=fg, weight=ft.FontWeight.BOLD
+            ),
             bgcolor=bg,
             border_radius=4,
             padding=ft.padding.symmetric(horizontal=5, vertical=1),
@@ -162,7 +167,5 @@ class HistoryPage(ft.Container):
             self._on_load_session(session)
 
     def _safe_update(self, control):
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Callable
 
 from pynput import keyboard
 
@@ -69,7 +68,9 @@ class PynputHotkeyService:
     For READ hotkey: auto-copies selected text via Ctrl+C before publishing.
     """
 
-    def __init__(self, config: AppConfig, event_bus: EventBus, loop: asyncio.AbstractEventLoop) -> None:
+    def __init__(
+        self, config: AppConfig, event_bus: EventBus, loop: asyncio.AbstractEventLoop
+    ) -> None:
         self._event_bus = event_bus
         self._loop = loop
 
@@ -113,7 +114,7 @@ class PynputHotkeyService:
             self._pressed.clear()
 
         elif self._hotkey_ocr.issubset(normalized):
-            logger.info("OCR hotkey triggered — opening screen capture overlay")
+            logger.info("OCR hotkey detected")
             self._pressed.clear()
             self._publish_event(HotkeyAction.OCR)
 

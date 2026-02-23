@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 import tkinter as tk
-from typing import Callable, Optional, Tuple
+from collections.abc import Callable
 
 from src.domain.ocr.config import (
     OVERLAY_BACKGROUND_COLOR,
@@ -16,14 +16,13 @@ from src.domain.ocr.config import (
 
 logger = logging.getLogger(__name__)
 
-Region = Tuple[int, int, int, int]
-RegionCallback = Callable[[Optional[Region]], None]
+Region = tuple[int, int, int, int]
+RegionCallback = Callable[[Region | None], None]
 
 
 class OverlayController:
-
     def __init__(self) -> None:
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     def show(self, on_region_selected: RegionCallback) -> None:
         if self._thread and self._thread.is_alive():
@@ -47,13 +46,12 @@ class OverlayController:
 
 
 class _OverlayWindow:
-
     def __init__(self, root: tk.Tk, callback: RegionCallback) -> None:
         self._root = root
         self._callback = callback
         self._start_x = 0
         self._start_y = 0
-        self._rect_id: Optional[int] = None
+        self._rect_id: int | None = None
 
         self._setup_window()
         self._setup_canvas()
@@ -102,7 +100,10 @@ class _OverlayWindow:
         y1 = event.y_root - ry
 
         self._rect_id = self._canvas.create_rectangle(
-            x0, y0, x1, y1,
+            x0,
+            y0,
+            x1,
+            y1,
             outline=OVERLAY_SELECTION_COLOR,
             width=OVERLAY_SELECTION_LINE_WIDTH,
             fill=OVERLAY_TRANSPARENT_COLOR,
@@ -117,7 +118,7 @@ class _OverlayWindow:
         self._root.destroy()
 
         if w >= OVERLAY_MIN_DRAG_PX and h >= OVERLAY_MIN_DRAG_PX:
-            logger.debug("Region selected: (%d, %d, %d×%d)", x, y, w, h)
+            logger.debug("Region selected: (%d, %d, %dx%d)", x, y, w, h)
             self._callback((x, y, w, h))
         else:
             logger.debug("Drag too small — treated as cancel")

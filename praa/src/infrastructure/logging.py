@@ -1,14 +1,6 @@
-"""
-PRAA Logging — Rich Console + File Logging
-
-Provides beautiful, colorized terminal output using Rich's RichHandler,
-while keeping an optional plain-text file handler for debug output.
-"""
-
 from __future__ import annotations
 
 import logging
-import sys
 from pathlib import Path
 
 from rich.logging import RichHandler
@@ -21,13 +13,6 @@ def setup_logging(
     level: int = logging.INFO,
     log_file: Path | None = None,
 ) -> None:
-    """
-    Configure the root logger for PRAA with Rich console output.
-
-    Args:
-        level: Minimum log level (default: INFO).
-        log_file: Optional path to a log file for debug output.
-    """
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+
 import flet as ft
 import flet.canvas as cv
 
@@ -40,14 +42,14 @@ class SpectrumComponent(ft.Container):
             color = colors[i % len(colors)]
             shapes.append(
                 cv.Rect(
-                    x=x, y=y,
-                    width=bar_w, height=bar_h,
+                    x=x,
+                    y=y,
+                    width=bar_w,
+                    height=bar_h,
                     paint=ft.Paint(color=color, style=ft.PaintingStyle.FILL),
                 )
             )
 
         self._canvas.shapes = shapes
-        try:
+        with contextlib.suppress(Exception):
             self._canvas.update()
-        except Exception:
-            pass

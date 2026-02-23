@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import queue
 import threading
@@ -36,10 +37,8 @@ class AudioQueue:
                 try:
                     item = self._queue.get_nowait()
                     if item is not None and item.exists():
-                        try:
+                        with contextlib.suppress(OSError):
                             item.unlink()
-                        except OSError:
-                            pass
                     count += 1
                 except queue.Empty:
                     break

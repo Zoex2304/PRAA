@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Optional
 
 from src.domain.audio.service import AudioService
 from src.domain.config.models import AppConfig, LanguagePreference
@@ -14,6 +14,7 @@ from src.domain.widget.spectrum import SpectrumAnalyzer
 from src.domain.widget.state import PlaybackState, PlaybackStateManager
 from src.domain.widget.sync import SyncController
 from src.domain.widget.time_provider import CalibratedTimeProvider
+from src.domain.widget.tips import Feature, TipsManager
 from src.infrastructure.activity_tracker import ActivityTracker
 from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import (
@@ -29,6 +30,7 @@ from src.infrastructure.events import (
     PlaybackResumed,
     PlaybackStarted,
     PlaybackStopped,
+    SplashCompleted,
     SynthesisComplete,
     SynthesisStarted,
     TextCaptured,
@@ -41,8 +43,8 @@ from src.presentation.controllers.playback_controller import PlaybackController
 
 logger = logging.getLogger(__name__)
 
-_THREAD_REFRESH_TICKS = 40   # ~2 s at 50 ms tick
-_SYSTEM_REFRESH_TICKS  = 100  # ~5 s
+_THREAD_REFRESH_TICKS = 40  # ~2 s at 50 ms tick
+_SYSTEM_REFRESH_TICKS = 100  # ~5 s
 
 
 class WidgetController:
@@ -53,11 +55,12 @@ class WidgetController:
         event_bus: EventBus,
         loop: asyncio.AbstractEventLoop,
         session_service: SessionService,
-        audio_service: Optional[AudioService] = None,
+        audio_service: AudioService | None = None,
         config_service=None,
-        activity_tracker: Optional[ActivityTracker] = None,
+        activity_tracker: ActivityTracker | None = None,
         is_first_run: bool = False,
-        on_first_run_complete: Optional[callable] = None,
+        on_first_run_complete: Callable[[], None] | None = None,
+        tips_manager: TipsManager | None = None,
     ):
         self._config = config
         self._theme = theme
@@ -69,6 +72,9 @@ class WidgetController:
         self._activity_tracker = activity_tracker or ActivityTracker()
         self._is_first_run = is_first_run
         self._on_first_run_complete = on_first_run_complete
+        self._tips_manager = tips_manager
+        # Feature gate: block all hotkey/OCR actions until splash is dismissed.
+        self._splash_active = is_first_run
 
         self._state_manager = PlaybackStateManager()
         self._spectrum = SpectrumAnalyzer(num_bands=theme.dimensions.spectrum_bar_count)
@@ -80,8 +86,8 @@ class WidgetController:
         self._synthesis_complete_count = 0
         self._total_chunks = 0
 
-        self._time_provider: Optional[CalibratedTimeProvider] = None
-        self._sync_controller: Optional[SyncController] = None
+        self._time_provider: CalibratedTimeProvider | None = None
+        self._sync_controller: SyncController | None = None
         if audio_service:
             self._time_provider = CalibratedTimeProvider(
                 get_player_position_ms=lambda: audio_service.position_ms,
@@ -99,8 +105,11 @@ class WidgetController:
         self._chunk_statuses: dict[int, str] = {}
         self._running = False
         self._has_been_activated = False
-        self._active_upload_path: Optional[Path] = None
+        self._active_upload_path: Path | None = None
         self._current_source: str = "USER_BLOCK"
+
+        self._speed_seek_chunk: int | None = None
+        self._resynthesizing_for_speed: bool = False
 
         self._app = FletApp(
             theme=theme,
@@ -121,6 +130,8 @@ class WidgetController:
             on_speed_change=self._handle_speed_change,
             show_splash=is_first_run,
             on_splash_dismissed=self._handle_splash_dismissed,
+            on_history_viewed=self._mark_history_viewed,
+            on_settings_opened=self._mark_settings_opened,
         )
 
     @property
@@ -158,17 +169,46 @@ class WidgetController:
     # ------------------------------------------------------------------
 
     async def on_hotkey_pressed(self, event: HotkeyPressed) -> None:
+        if self._splash_active:
+            return
         if event.action == HotkeyAction.READ:
             self.show()
 
+    def is_splash_active(self) -> bool:
+        """True while the first-run splash is displayed; features are blocked."""
+        return self._splash_active
+
+    async def on_splash_completed(self, event: SplashCompleted) -> None:
+        """No-op — splash dismissal is handled synchronously via _handle_splash_dismissed."""
+        pass
+
     async def on_text_captured(self, event: TextCaptured) -> None:
-        logger.info("Text captured: %d chars (source=%s)", len(event.raw_text), event.source_type)
+        logger.info(
+            "Text captured: %d chars (source=%s)",
+            len(event.raw_text),
+            event.source_type,
+        )
         self._activity_tracker.report("WidgetController", "Processing", "Text captured")
         self._current_source = getattr(event, "source_type", "USER_BLOCK")
+
+        # Mark the corresponding feature as tried (eliminates its tip).
+        if self._tips_manager and not self._resynthesizing_for_speed:
+            if self._current_source == "OCR":
+                self._tips_manager.mark_feature_used(Feature.OCR)
+            elif self._current_source == "FILE_UPLOAD":
+                self._tips_manager.mark_feature_used(Feature.UPLOAD)
+            elif self._current_source == "USER_BLOCK":
+                self._tips_manager.mark_feature_used(Feature.READ)
 
         if not self._has_been_activated:
             self._app.activate_bar()
             self._has_been_activated = True
+
+        # Speed re-synthesis preserves seek position; any other capture clears it.
+        if self._resynthesizing_for_speed:
+            self._resynthesizing_for_speed = False
+        else:
+            self._speed_seek_chunk = None
 
         if self._sync_controller:
             self._sync_controller.reset()
@@ -197,7 +237,9 @@ class WidgetController:
         self._text_chunks = list(event.chunks)
         self._chunk_statuses.clear()
         n = len(event.chunks)
-        self._activity_tracker.report("WidgetController", "Processing", f"Synthesizing {n} chunks")
+        self._activity_tracker.report(
+            "WidgetController", "Processing", f"Synthesizing {n} chunks"
+        )
 
         self._app.advance_milestone(2, f"0 / {n} chunks")
         self._app.setup_queue(n)
@@ -208,7 +250,9 @@ class WidgetController:
         self._playback_controller.set_transcript(self._transcript_text)
 
         for i, chunk in enumerate(event.chunks):
-            name = chunk.strip().replace("\n", " ")[:30] + ("…" if len(chunk) > 30 else "")
+            name = chunk.strip().replace("\n", " ")[:30] + (
+                "…" if len(chunk) > 30 else ""
+            )
             self._app.update_queue_status(i, "pending", name)
             self._chunk_statuses[i] = "pending"
 
@@ -231,10 +275,15 @@ class WidgetController:
         self._synthesis_complete_count += 1
 
         if event.word_boundaries and self._sync_controller:
-            self._sync_controller.load_boundaries(event.chunk_index, event.word_boundaries)
+            self._sync_controller.load_boundaries(
+                event.chunk_index, event.word_boundaries
+            )
         elif event.sentence_boundaries and self._sync_controller:
-            interpolated = self._interpolator.interpolate_from_sentences(event.sentence_boundaries)
+            interpolated = self._interpolator.interpolate_from_sentences(
+                event.sentence_boundaries
+            )
             from src.domain.processor.text_offset_mapper import calculate_text_offsets
+
             enhanced = calculate_text_offsets(event.chunk_text, interpolated)
             self._sync_controller.load_boundaries(event.chunk_index, enhanced)
 
@@ -245,11 +294,17 @@ class WidgetController:
 
         if len(self._audio_paths) == event.total_chunks:
             self._state_manager.processing_complete()
-            if self._transcript_text:
+            # Skip session save for speed re-syntheses to avoid duplicate records.
+            if self._transcript_text and self._speed_seek_chunk is None:
                 self._save_session()
             self._app.set_audio_ready(list(self._audio_paths))
             if self._active_upload_path:
                 self._app.advance_upload_step(self._active_upload_path, 4)
+            if self._speed_seek_chunk is not None and self._audio_service:
+                seek = self._speed_seek_chunk
+                self._speed_seek_chunk = None
+                paths = list(self._audio_paths)
+                self._audio_service.play_from_chunk(min(seek, len(paths) - 1), paths)
 
         self._schedule_ui_update()
 
@@ -257,7 +312,9 @@ class WidgetController:
         self._state_manager.start_playback(event.chunk_index)
         self._current_playing_chunk = event.chunk_index
         self._activity_tracker.report(
-            "WidgetController", "Playing", f"Chunk {event.chunk_index + 1}/{event.total_chunks}"
+            "WidgetController",
+            "Playing",
+            f"Chunk {event.chunk_index + 1}/{event.total_chunks}",
         )
 
         if event.chunk_index > 0:
@@ -280,7 +337,9 @@ class WidgetController:
             self._time_provider.set_chunk(event.chunk_index)
             self._time_provider.calibrate()
 
-        if self._sync_controller and not self._sync_controller.has_boundaries(event.chunk_index):
+        if self._sync_controller and not self._sync_controller.has_boundaries(
+            event.chunk_index
+        ):
             self._sync_controller.wait_for_boundaries(event.chunk_index)
 
         self._schedule_ui_update()
@@ -314,6 +373,8 @@ class WidgetController:
 
         if event.reason == "completed":
             self._state_manager.complete_playback()
+            if self._tips_manager and self._tips_manager.should_show():
+                self._loop.create_task(self._show_tip_after_playback())
         elif event.reason == "error":
             self._state_manager.error_occurred()
         else:
@@ -338,6 +399,7 @@ class WidgetController:
 
     async def on_file_text_ready(self, event: FileTextReady) -> None:
         from src.domain.upload.models import UploadRecord
+
         record = UploadRecord(
             source_path=event.source_path,
             file_name=event.source_path.name,
@@ -350,13 +412,19 @@ class WidgetController:
         self._app.advance_upload_step(event.source_path, 2)
 
     async def on_file_upload_failed(self, event: FileUploadFailed) -> None:
-        logger.warning("File upload failed: %s — %s", event.source_path.name, event.reason)
+        logger.warning(
+            "File upload failed: %s — %s", event.source_path.name, event.reason
+        )
         if self._app.compact_bar:
-            self._app.compact_bar.set_status(f"Upload failed: {event.reason}", "#ef4444")
+            self._app.compact_bar.set_status(
+                f"Upload failed: {event.reason}", "#ef4444"
+            )
         await asyncio.sleep(2.0)
         state_info = self._state_manager.get_state_info()
         if self._app.compact_bar:
-            self._app.compact_bar.set_status(state_info.status_text, state_info.status_color)
+            self._app.compact_bar.set_status(
+                state_info.status_text, state_info.status_color
+            )
 
     async def on_config_changed(self, event: ConfigChanged) -> None:
         """Sync UI when config changes (e.g. speed slider in another path)."""
@@ -415,7 +483,9 @@ class WidgetController:
             self._handle_play_chunk(chunk_index)
 
     def _handle_voice_change(self, voice_id: str) -> None:
-        self._publish_event(TrayAction(action=TrayActionType.CHANGE_VOICE, value=voice_id))
+        self._publish_event(
+            TrayAction(action=TrayActionType.CHANGE_VOICE, value=voice_id)
+        )
 
     def _handle_language_change(self, lang_code: str) -> None:
         if self._config_service:
@@ -438,6 +508,7 @@ class WidgetController:
         try:
             import numpy as np
             import soundfile as sf
+
             chunks = []
             samplerate = 24000
             for p in paths:
@@ -462,18 +533,60 @@ class WidgetController:
                 self._config_service.update("speed_rate", new_speed),
                 self._loop,
             )
+        # If actively playing or paused, re-synthesize at new speed and resume
+        # from the current chunk position so the change is instant.
+        state = self._state_manager.state
+        is_active = state in (PlaybackState.PLAYING, PlaybackState.PAUSED)
+        if self._transcript_text and is_active and self._audio_paths:
+            self._speed_seek_chunk = self._current_playing_chunk
+            self._resynthesizing_for_speed = True
+            if self._tips_manager:
+                self._tips_manager.mark_feature_used(Feature.SPEED)
+            self._publish_event(TextCaptured(raw_text=self._transcript_text))
 
     def _handle_splash_dismissed(self) -> None:
+        self._splash_active = False
+        self._activity_tracker.report(
+            "WidgetController", "Ready", "Awaiting first input"
+        )
         if self._on_first_run_complete:
             self._on_first_run_complete()
+
+    def _mark_history_viewed(self) -> None:
+        if self._tips_manager:
+            self._tips_manager.mark_feature_used(Feature.HISTORY)
+
+    def _mark_settings_opened(self) -> None:
+        if self._tips_manager:
+            self._tips_manager.mark_feature_used(Feature.SETTINGS)
+
+    async def _show_tip_after_playback(self) -> None:
+        """Show the next untried-feature tip after a completed reading."""
+        await asyncio.sleep(0.8)
+        if not self._tips_manager:
+            return
+        tip = self._tips_manager.get_next_tip()
+        if tip is None:
+            return
+        self._app.show_tip(
+            tip.text,
+            on_skip=self._tips_manager.mark_skipped,
+            on_understand=lambda: (
+                None
+            ),  # Dismissed — tip shows again until feature is tried
+        )
 
     # ------------------------------------------------------------------
     # Word sync callback
     # ------------------------------------------------------------------
 
-    def _on_highlight_word(self, chunk_idx: int, start_char: int, end_char: int) -> None:
+    def _on_highlight_word(
+        self, chunk_idx: int, start_char: int, end_char: int
+    ) -> None:
         if self._app.home and self._app.home.transcript:
-            self._app.home.transcript.highlight_relative(chunk_idx, start_char, end_char)
+            self._app.home.transcript.highlight_relative(
+                chunk_idx, start_char, end_char
+            )
 
     def _publish_event(self, event: object) -> None:
         asyncio.run_coroutine_threadsafe(self._event_bus.publish(event), self._loop)
@@ -481,13 +594,17 @@ class WidgetController:
     def _schedule_ui_update(self) -> None:
         state_info = self._state_manager.get_state_info()
         if self._app.compact_bar:
-            self._app.compact_bar.set_status(state_info.status_text, state_info.status_color)
+            self._app.compact_bar.set_status(
+                state_info.status_text, state_info.status_color
+            )
             self._app.compact_bar.set_play_icon(
                 state_info.state == PlaybackState.PLAYING,
                 state_info.state == PlaybackState.PAUSED,
             )
         if self._app.debug:
-            self._app.debug.update_state(state_info.status_text, state_info.status_color)
+            self._app.debug.update_state(
+                state_info.status_text, state_info.status_color
+            )
 
     # ------------------------------------------------------------------
     # UI loop
@@ -516,21 +633,28 @@ class WidgetController:
                     pos = self._audio_service.position_ms
                     dur = self._audio_service.duration_ms
                     if dur > 0:
-                        self._app.update_queue_progress(self._current_playing_chunk, pos, dur)
+                        self._app.update_queue_progress(
+                            self._current_playing_chunk, pos, dur
+                        )
 
                 # Time display
-                if is_playing and self._audio_service and self._app.home:
-                    if self._app.home.transcript:
-                        pos = self._audio_service.position_ms
-                        m = int(pos / 1000) // 60
-                        s = int(pos / 1000) % 60
-                        self._app.home.transcript.set_time(f"{m}:{s:02d}")
+                if (
+                    is_playing
+                    and self._audio_service
+                    and self._app.home
+                    and self._app.home.transcript
+                ):
+                    pos = self._audio_service.position_ms
+                    m = int(pos / 1000) // 60
+                    s = int(pos / 1000) % 60
+                    self._app.home.transcript.set_time(f"{m}:{s:02d}")
 
                 # Thread activity + system KPI refresh
                 if self._tick_count % _THREAD_REFRESH_TICKS == 0 and self._app.debug:
                     log_act = (
                         self._log_handler.get_thread_activity()
-                        if self._log_handler else {}
+                        if self._log_handler
+                        else {}
                     )
                     self._app.debug.update_thread_panel(log_act)
 

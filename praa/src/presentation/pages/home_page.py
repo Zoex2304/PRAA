@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, List, Optional
 
 import flet as ft
 
@@ -16,17 +17,16 @@ from src.presentation.components.upload_section_component import UploadSectionCo
 
 
 class HomePage(ft.Container):
-
     def __init__(
         self,
         theme: ThemeConfig,
         home_spectrum: SpectrumComponent,
-        on_play_chunk: Optional[Callable[[int], None]] = None,
-        on_pause_chunk: Optional[Callable[[int], None]] = None,
-        on_seek_chunk: Optional[Callable[[int], None]] = None,
-        on_seek_position: Optional[Callable[[int, float], None]] = None,
-        on_download_requested: Optional[Callable[[List[Path]], None]] = None,
-        on_speed_change: Optional[Callable[[float], None]] = None,
+        on_play_chunk: Callable[[int], None] | None = None,
+        on_pause_chunk: Callable[[int], None] | None = None,
+        on_seek_chunk: Callable[[int], None] | None = None,
+        on_seek_position: Callable[[int, float], None] | None = None,
+        on_download_requested: Callable[[list[Path]], None] | None = None,
+        on_speed_change: Callable[[float], None] | None = None,
         current_speed: float = 1.0,
         **kwargs,
     ):
@@ -105,7 +105,7 @@ class HomePage(ft.Container):
     def set_audio_pending(self) -> None:
         self.transcript.set_audio_pending()
 
-    def set_audio_ready(self, paths: List[Path]) -> None:
+    def set_audio_ready(self, paths: list[Path]) -> None:
         self.transcript.set_audio_ready(paths)
 
     def reset_audio(self) -> None:
@@ -146,7 +146,5 @@ class HomePage(ft.Container):
         self.page.update()
 
     def _safe_update(self, control: ft.Control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 from enum import Enum, auto
 
@@ -20,7 +21,6 @@ class StepConfig:
 
 
 class VerticalStepperComponent(ft.Container):
-
     def __init__(self, theme: ThemeConfig, steps: list[StepConfig], **kwargs):
         super().__init__(**kwargs)
         self._theme = theme
@@ -104,7 +104,5 @@ class VerticalStepperComponent(ft.Container):
         self._safe_update(self._label_texts[idx])
 
     def _safe_update(self, control: ft.Control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

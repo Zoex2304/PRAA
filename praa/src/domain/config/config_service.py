@@ -121,6 +121,7 @@ class ConfigService:
                 if "Neural" in event.value:
                     # Direct voice_id from settings UI — update the matching language slot
                     from src.domain.config.voices_config import find_voice
+
                     entry = find_voice(event.value)
                     if entry:
                         if entry.language_code == "id":

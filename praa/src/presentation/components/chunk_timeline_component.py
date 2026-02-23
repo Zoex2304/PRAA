@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Callable, Optional
+import contextlib
+from collections.abc import Callable
 
 import flet as ft
 import flet.canvas as cv
@@ -10,11 +11,11 @@ from src.domain.config.theme_config import ThemeConfig
 _HEIGHT = 6
 
 _STATUS_COLORS: dict[str, str] = {
-    "pending":    "#1e293b",
+    "pending": "#1e293b",
     "processing": "#78350f",
-    "ready":      "#164e63",
-    "playing":    "#14532d",
-    "done":       "#334155",
+    "ready": "#164e63",
+    "playing": "#14532d",
+    "done": "#334155",
 }
 
 
@@ -39,8 +40,8 @@ class ChunkTimelineComponent(ft.Container):
     def __init__(
         self,
         theme: ThemeConfig,
-        on_seek_chunk: Optional[Callable[[int], None]] = None,
-        on_seek_position: Optional[Callable[[int, float], None]] = None,
+        on_seek_chunk: Callable[[int], None] | None = None,
+        on_seek_position: Callable[[int, float], None] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -115,20 +116,30 @@ class ChunkTimelineComponent(ft.Container):
 
         for i in range(self._n_chunks):
             x = i * (seg_w + gap)
-            color = _STATUS_COLORS.get(self._statuses.get(i, "pending"), _STATUS_COLORS["pending"])
-            shapes.append(cv.Rect(
-                x=x, y=2,
-                width=seg_w, height=h - 4,
-                paint=ft.Paint(color=color, style=ft.PaintingStyle.FILL),
-            ))
+            color = _STATUS_COLORS.get(
+                self._statuses.get(i, "pending"), _STATUS_COLORS["pending"]
+            )
+            shapes.append(
+                cv.Rect(
+                    x=x,
+                    y=2,
+                    width=seg_w,
+                    height=h - 4,
+                    paint=ft.Paint(color=color, style=ft.PaintingStyle.FILL),
+                )
+            )
             # Playhead within the playing chunk (2px white rect, no circle cap)
             if i == self._playing_chunk:
                 px = x + seg_w * max(0.0, min(1.0, self._playhead_frac))
-                shapes.append(cv.Rect(
-                    x=px - 1, y=0,
-                    width=2, height=h,
-                    paint=ft.Paint(color="#ffffff", style=ft.PaintingStyle.FILL),
-                ))
+                shapes.append(
+                    cv.Rect(
+                        x=px - 1,
+                        y=0,
+                        width=2,
+                        height=h,
+                        paint=ft.Paint(color="#ffffff", style=ft.PaintingStyle.FILL),
+                    )
+                )
 
         self._canvas.shapes = shapes
         self._safe_update(self._canvas)
@@ -137,7 +148,9 @@ class ChunkTimelineComponent(ft.Container):
         if self._n_chunks == 0 or not self._on_seek_chunk:
             return
         gap = 2
-        seg_w = max(4.0, (self._draw_width - gap * (self._n_chunks - 1)) / self._n_chunks)
+        seg_w = max(
+            4.0, (self._draw_width - gap * (self._n_chunks - 1)) / self._n_chunks
+        )
         chunk_idx = int(e.local_position.x / (seg_w + gap))
         chunk_idx = max(0, min(self._n_chunks - 1, chunk_idx))
         status = self._statuses.get(chunk_idx, "pending")
@@ -148,7 +161,9 @@ class ChunkTimelineComponent(ft.Container):
         if self._n_chunks == 0:
             return
         gap = 2
-        seg_w = max(4.0, (self._draw_width - gap * (self._n_chunks - 1)) / self._n_chunks)
+        seg_w = max(
+            4.0, (self._draw_width - gap * (self._n_chunks - 1)) / self._n_chunks
+        )
         chunk_idx = int(e.local_position.x / (seg_w + gap))
         chunk_idx = max(0, min(self._n_chunks - 1, chunk_idx))
         status = self._statuses.get(chunk_idx, "pending")
@@ -162,7 +177,5 @@ class ChunkTimelineComponent(ft.Container):
             self._on_seek_chunk(chunk_idx)
 
     def _safe_update(self, control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Optional
 
 import flet as ft
 
@@ -30,8 +31,8 @@ class TranscriptComponent(ft.Container):
     def __init__(
         self,
         theme: ThemeConfig,
-        on_copy: Optional[Callable] = None,
-        on_download_requested: Optional[Callable[[List[Path]], None]] = None,
+        on_copy: Callable | None = None,
+        on_download_requested: Callable[[list[Path]], None] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -94,11 +95,15 @@ class TranscriptComponent(ft.Container):
     # ------------------------------------------------------------------
 
     def set_content(self, chunks: list[str]) -> None:
-        self._chunks = {i: ChunkData(index=i, text=text) for i, text in enumerate(chunks)}
+        self._chunks = {
+            i: ChunkData(index=i, text=text) for i, text in enumerate(chunks)
+        }
         self._full_text = "\n\n".join(chunks)
         self._prev_highlight_chunk = -1
         self._rebuild_list()
-        logger.info("Transcript loaded: %d chunks, %d chars", len(chunks), len(self._full_text))
+        logger.info(
+            "Transcript loaded: %d chunks, %d chars", len(chunks), len(self._full_text)
+        )
 
     def clear_content(self) -> None:
         self._chunks.clear()
@@ -122,23 +127,29 @@ class TranscriptComponent(ft.Container):
         spans: list[ft.TextSpan] = []
 
         if start > 0:
-            spans.append(ft.TextSpan(
-                text=text[:start],
-                style=ft.TextStyle(color=colors.highlight_spoken),
-            ))
-        spans.append(ft.TextSpan(
-            text=text[start:end],
-            style=ft.TextStyle(
-                color=colors.highlight_active,
-                bgcolor=colors.bg_input,
-                weight=ft.FontWeight.BOLD,
-            ),
-        ))
+            spans.append(
+                ft.TextSpan(
+                    text=text[:start],
+                    style=ft.TextStyle(color=colors.highlight_spoken),
+                )
+            )
+        spans.append(
+            ft.TextSpan(
+                text=text[start:end],
+                style=ft.TextStyle(
+                    color=colors.highlight_active,
+                    bgcolor=colors.bg_input,
+                    weight=ft.FontWeight.BOLD,
+                ),
+            )
+        )
         if end < len(text):
-            spans.append(ft.TextSpan(
-                text=text[end:],
-                style=ft.TextStyle(color=colors.highlight_unspoken),
-            ))
+            spans.append(
+                ft.TextSpan(
+                    text=text[end:],
+                    style=ft.TextStyle(color=colors.highlight_unspoken),
+                )
+            )
 
         ctrl = self._chunk_texts.get(chunk_idx)
         if ctrl:
@@ -147,10 +158,8 @@ class TranscriptComponent(ft.Container):
             self._safe_update(ctrl)
 
         # Auto-scroll to keep the active chunk visible
-        try:
+        with contextlib.suppress(Exception):
             self._list.scroll_to(key=f"chunk_{chunk_idx}", duration=300)
-        except Exception:
-            pass
 
         self._prev_highlight_chunk = chunk_idx
 
@@ -165,7 +174,7 @@ class TranscriptComponent(ft.Container):
     def set_audio_pending(self) -> None:
         self._download.set_pending()
 
-    def set_audio_ready(self, paths: List[Path]) -> None:
+    def set_audio_ready(self, paths: list[Path]) -> None:
         self._download.set_ready(paths)
 
     def reset_audio(self) -> None:
@@ -192,10 +201,12 @@ class TranscriptComponent(ft.Container):
             ctrl = ft.Text(
                 value=None,
                 key=f"chunk_{i}",
-                spans=[ft.TextSpan(
-                    text=chunk.text,
-                    style=ft.TextStyle(color=colors.highlight_unspoken),
-                )],
+                spans=[
+                    ft.TextSpan(
+                        text=chunk.text,
+                        style=ft.TextStyle(color=colors.highlight_unspoken),
+                    )
+                ],
                 size=self._theme.typography.font_size_md,
                 selectable=True,
             )
@@ -209,10 +220,12 @@ class TranscriptComponent(ft.Container):
         ctrl = self._chunk_texts.get(chunk_idx)
         if chunk and ctrl:
             ctrl.value = None
-            ctrl.spans = [ft.TextSpan(
-                text=chunk.text,
-                style=ft.TextStyle(color=self._theme.colors.highlight_spoken),
-            )]
+            ctrl.spans = [
+                ft.TextSpan(
+                    text=chunk.text,
+                    style=ft.TextStyle(color=self._theme.colors.highlight_spoken),
+                )
+            ]
             self._safe_update(ctrl)
 
     def _handle_copy(self, _e=None) -> None:
@@ -220,7 +233,5 @@ class TranscriptComponent(ft.Container):
             self._on_copy(self._full_text)
 
     def _safe_update(self, control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -20,9 +19,15 @@ class ColorsConfig(BaseModel):
     text_dim: str = "#94a3b8"
     text_muted: str = "#64748b"
     danger: str = "#ef4444"
-    spectrum: list[str] = Field(default_factory=lambda: [
-        "#0f9d9a", "#14cfc9", "#00e5ff", "#0ea5e9", "#06b6d4",
-    ])
+    spectrum: list[str] = Field(
+        default_factory=lambda: [
+            "#0f9d9a",
+            "#14cfc9",
+            "#00e5ff",
+            "#0ea5e9",
+            "#06b6d4",
+        ]
+    )
     status_idle: str = "#64748b"
     status_processing: str = "#f59e0b"
     status_playing: str = "#22c55e"

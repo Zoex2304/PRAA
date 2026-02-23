@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import flet as ft
 
 from src.domain.config.models import AppConfig
 from src.domain.config.theme_config import ThemeConfig
-from src.domain.config.voices_config import VOICE_CATALOG, LANGUAGE_OPTIONS
+from src.domain.config.voices_config import LANGUAGE_OPTIONS, VOICE_CATALOG
 
 
 class SettingsMenuComponent(ft.Container):
@@ -21,8 +21,8 @@ class SettingsMenuComponent(ft.Container):
         self,
         theme: ThemeConfig,
         config: AppConfig,
-        on_voice_change: Optional[Callable[[str], None]] = None,
-        on_language_change: Optional[Callable[[str], None]] = None,
+        on_voice_change: Callable[[str], None] | None = None,
+        on_language_change: Callable[[str], None] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -30,8 +30,8 @@ class SettingsMenuComponent(ft.Container):
         self._config = config
         self._on_voice_change = on_voice_change
         self._on_language_change = on_language_change
-        self._page: Optional[ft.Page] = None
-        self._dialog: Optional[ft.AlertDialog] = None
+        self._page: ft.Page | None = None
+        self._dialog: ft.AlertDialog | None = None
 
         self._btn = ft.IconButton(
             icon=ft.Icons.MORE_VERT,
@@ -74,9 +74,8 @@ class SettingsMenuComponent(ft.Container):
 
         def voice_tile(v) -> ft.ListTile:
             selected = (
-                (v.language_code == "id" and v.voice_id == self._config.voice_id)
-                or (v.language_code == "en" and v.voice_id == self._config.voice_en)
-            )
+                v.language_code == "id" and v.voice_id == self._config.voice_id
+            ) or (v.language_code == "en" and v.voice_id == self._config.voice_en)
             return ft.ListTile(
                 leading=ft.Icon(
                     ft.Icons.RADIO_BUTTON_ON if selected else ft.Icons.RADIO_BUTTON_OFF,
@@ -120,7 +119,7 @@ class SettingsMenuComponent(ft.Container):
                 *[voice_tile(v) for v in VOICE_CATALOG],
                 ft.Divider(height=1, color=colors.border_subtle),
                 section_header("Language"),
-                *[lang_tile(l) for l in LANGUAGE_OPTIONS],
+                *[lang_tile(lang) for lang in LANGUAGE_OPTIONS],
             ],
             spacing=0,
             tight=True,

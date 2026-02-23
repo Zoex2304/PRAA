@@ -4,7 +4,6 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 _RICH_TAG_RE = re.compile(r"\[/?[^\]]+\]")
 
@@ -43,15 +42,17 @@ class FletLogHandler(logging.Handler):
             )
             self._records.append(entry)
             if len(self._records) > self._max_records:
-                self._records = self._records[-self._max_records:]
-                self._drain_idx = max(0, self._drain_idx - (len(self._records) - self._max_records))
+                self._records = self._records[-self._max_records :]
+                self._drain_idx = max(
+                    0, self._drain_idx - (len(self._records) - self._max_records)
+                )
             clean = _RICH_TAG_RE.sub("", record.getMessage())
             self._thread_activity[record.threadName] = clean[:120]
         except Exception:
             self.handleError(record)
 
     def drain_new_entries(self) -> list[LogEntry]:
-        new = self._records[self._drain_idx:]
+        new = self._records[self._drain_idx :]
         self._drain_idx = len(self._records)
         return new
 

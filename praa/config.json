@@ -5,7 +5,7 @@
   "voice_id": "id-ID-ArdiNeural",
   "voice_en": "en-US-BrianNeural",
   "voice_gender": "male",
-  "speed_rate": 2.0,
+  "speed_rate": 1.0,
   "ui_mode": "widget",
   "auto_copy": true,
   "language_preference": "auto",

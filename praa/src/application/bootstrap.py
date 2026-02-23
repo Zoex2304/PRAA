@@ -10,7 +10,7 @@ import flet as ft
 from src.application.orchestrator import Orchestrator
 from src.domain.audio.service import AudioService
 from src.domain.clipboard.service import TkinterClipboardService
-from src.domain.config.models import AppConfig, UIMode
+from src.domain.config.models import UIMode
 from src.domain.config.service import ConfigService
 from src.domain.config.theme_config import ThemeConfig
 from src.domain.dbmanager.service import DbManagerService
@@ -22,14 +22,21 @@ from src.domain.ocr.overlay import OverlayController
 from src.domain.ocr.reader import OcrReaderService
 from src.domain.ocr.service import OcrService
 from src.domain.processor.service import ProcessorService
+from src.domain.session.service import SessionService
 from src.domain.tray.service import PystrayTrayService
 from src.domain.tts.service import EdgeTTSService
-from src.domain.session.service import SessionService
 from src.domain.upload.service import UploadService
-from src.infrastructure.database import DatabaseManager
+from src.domain.widget.tips import TipsManager
 from src.infrastructure.activity_tracker import ActivityTracker
+from src.infrastructure.database.engine import build_engine, build_session_factory
+from src.infrastructure.database.unit_of_work import UnitOfWork
 from src.infrastructure.event_bus import EventBus
-from src.infrastructure.events import AppShutdown, AppStarted, TrayAction, TrayActionType
+from src.infrastructure.events import (
+    AppShutdown,
+    AppStarted,
+    TrayAction,
+    TrayActionType,
+)
 from src.infrastructure.flet_log_handler import FletLogHandler
 from src.infrastructure.logging import setup_logging
 from src.presentation.controllers.widget_controller import WidgetController
@@ -59,7 +66,7 @@ class Application:
         self._upload_service: UploadService | None = None
         self._widget_controller: WidgetController | None = None
         self._orchestrator: Orchestrator | None = None
-        self._db_manager: DatabaseManager | None = None
+        self._engine = None  # SQLAlchemy Engine; disposed on shutdown
         self._session_service: SessionService | None = None
         self._db_manager_service: DbManagerService | None = None
         self._log_handler: FletLogHandler | None = None
@@ -69,24 +76,31 @@ class Application:
 
         db_path = self._base_dir / "praa_v3.db"
         cache_dir = self._base_dir / "cache"
-        self._db_manager = DatabaseManager(db_path)
-        self._db_manager.connect()
-        self._session_service = SessionService(self._db_manager, cache_dir)
-        self._db_manager_service = DbManagerService(self._db_manager, cache_dir)
 
-        # Check first-run state.
-        # Guard: if app_state table was just created but sessions already exist,
-        # this is an existing user — do not show splash.
-        first_run_val = self._db_manager.get_app_state("first_run")
-        if first_run_val is None:
-            if self._db_manager.get_sessions_count() > 0:
-                # Existing user — mark done silently
-                self._db_manager.set_app_state("first_run", "done")
-                is_first_run = False
+        # Build SQLAlchemy engine (creates schema + runs migrations internally)
+        engine = build_engine(db_path)
+        self._engine = engine
+        session_factory = build_session_factory(engine)
+        uow_factory = lambda: UnitOfWork(session_factory)  # noqa: E731
+
+        # First-run check: if app_state has no "first_run" key AND no sessions exist
+        # this is a brand-new user; show splash.  Existing users are silently marked done.
+        with uow_factory() as uow:
+            first_run_val = uow.app_state.get("first_run")
+            if first_run_val is None:
+                if uow.sessions.count() > 0:
+                    uow.app_state.set("first_run", "done")
+                    uow.commit()
+                    is_first_run = False
+                else:
+                    is_first_run = True
             else:
-                is_first_run = True
-        else:
-            is_first_run = False
+                is_first_run = False
+
+        self._session_service = SessionService(uow_factory, cache_dir)
+        self._db_manager_service = DbManagerService(
+            uow_factory, cache_dir, ocr_debug_dir=Path(DEBUG_OUTPUT_DIR)
+        )
 
         self._clipboard_service = TkinterClipboardService(self._event_bus)
         self._processor_service = ProcessorService(config, self._event_bus)
@@ -112,16 +126,20 @@ class Application:
 
         icon_path = self._base_dir / "assets" / "icon.png"
         self._tray_service = PystrayTrayService(
-            config, self._event_bus, loop,
+            config,
+            self._event_bus,
+            loop,
             icon_path=icon_path if icon_path.exists() else None,
         )
 
         if config.ui_mode == UIMode.WIDGET:
             db_svc = self._db_manager_service
+            tips_manager = TipsManager(uow_factory)
 
             def mark_first_run_done():
-                if self._db_manager:
-                    self._db_manager.set_app_state("first_run", "done")
+                with uow_factory() as uow:
+                    uow.app_state.set("first_run", "done")
+                    uow.commit()
 
             self._widget_controller = WidgetController(
                 config=config,
@@ -134,6 +152,7 @@ class Application:
                 activity_tracker=self._activity_tracker,
                 is_first_run=is_first_run,
                 on_first_run_complete=mark_first_run_done,
+                tips_manager=tips_manager,
             )
             # Wire DB manager callbacks into FletApp
             if self._widget_controller and self._widget_controller.app:
@@ -212,8 +231,9 @@ class Application:
             self._tray_service.stop()
         if self._widget_controller:
             self._widget_controller.stop()
-        if self._db_manager:
-            self._db_manager.close()
+        if self._engine:
+            self._engine.dispose()
+            logger.info("SQLAlchemy engine disposed")
         if self._tts_service:
             self._tts_service.cleanup()
         if self._clipboard_service:

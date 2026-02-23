@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 import numpy as np
 import sounddevice as sd
@@ -44,7 +44,7 @@ class SoundDevicePlayer:
         self._current_block: np.ndarray | None = None  # Latest audio block for spectrum
         self._duration_ms = 0.0
         self._total_frames: int = 0
-        self._seek_frame: Optional[int] = None
+        self._seek_frame: int | None = None
 
     @property
     def position_ms(self) -> float:
@@ -73,7 +73,9 @@ class SoundDevicePlayer:
         """Total duration of current track in milliseconds."""
         return self._duration_ms
 
-    def play(self, audio_path: Path, on_start: Optional[Callable[[], None]] = None) -> None:
+    def play(
+        self, audio_path: Path, on_start: Callable[[], None] | None = None
+    ) -> None:
         """
         Play an audio file. Blocks until playback completes or is stopped.
 
@@ -148,7 +150,10 @@ class SoundDevicePlayer:
                         stream.write(block)
                     except Exception:
                         # Stream stopped externally (e.g. app shutdown) — exit cleanly
-                        logger.debug("Stream write interrupted for %s — exiting loop", audio_path.name)
+                        logger.debug(
+                            "Stream write interrupted for %s — exiting loop",
+                            audio_path.name,
+                        )
                         break
 
                     position = end_pos

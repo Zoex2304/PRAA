@@ -1,14 +1,12 @@
-
 from __future__ import annotations
 
-import re
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
 
 class ContentFilter:
-
     # --- HTML ---
     _HTML_IMG_TAG = re.compile(
         r"<(?:img|picture|figure|source|video|audio|canvas|svg|embed|object)"
@@ -33,18 +31,31 @@ class ContentFilter:
     )
 
     # --- URLs ---
-    _URL_PATTERN = re.compile(
-        r"https?://[^\s<>\"{}|\\^`\[\]]+", re.IGNORECASE
-    )
+    _URL_PATTERN = re.compile(r"https?://[^\s<>\"{}|\\^`\[\]]+", re.IGNORECASE)
     _EMAIL_PATTERN = re.compile(
         r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", re.IGNORECASE
     )
 
     # --- Media file paths ---
     _MEDIA_EXT = (
-        ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
-        ".bmp", ".ico", ".tiff", ".tif", ".avif",
-        ".mp4", ".mp3", ".wav", ".ogg", ".avi", ".mkv", ".mov",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".svg",
+        ".webp",
+        ".bmp",
+        ".ico",
+        ".tiff",
+        ".tif",
+        ".avif",
+        ".mp4",
+        ".mp3",
+        ".wav",
+        ".ogg",
+        ".avi",
+        ".mkv",
+        ".mov",
     )
     _FILE_PATH = re.compile(
         r"(?:[A-Za-z]:[/\\]|/|\\\\|\.{0,2}/)"  # Drive letter, unix path, UNC, relative
@@ -119,7 +130,9 @@ class ContentFilter:
             removed = original_length - filtered_length
             logger.debug(
                 "Content filtered: %d → %d chars (%d removed)",
-                original_length, filtered_length, removed,
+                original_length,
+                filtered_length,
+                removed,
             )
 
         return text

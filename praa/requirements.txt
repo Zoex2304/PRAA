@@ -1,3 +1,4 @@
+sqlalchemy>=2.0.0
 edge-tts>=7.0
 pystray>=0.19
 pynput>=1.7

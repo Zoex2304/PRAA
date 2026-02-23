@@ -1,4 +1,3 @@
-
 import sys
 from pathlib import Path
 
@@ -17,10 +16,15 @@ def main() -> None:
     # Fix encoding for Nuitka console output (prevents crash on non-ASCII logging)
     if getattr(sys, "frozen", False):
         import io
+
         if sys.stdout:
-            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+            sys.stdout = io.TextIOWrapper(
+                sys.stdout.buffer, encoding="utf-8", errors="replace"
+            )
         if sys.stderr:
-            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+            sys.stderr = io.TextIOWrapper(
+                sys.stderr.buffer, encoding="utf-8", errors="replace"
+            )
 
     # Add src to path for imports
     src_dir = base_dir / "src"

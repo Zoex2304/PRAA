@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import asyncio
@@ -6,13 +5,14 @@ import logging
 import threading
 from pathlib import Path
 
-from PIL import Image
 import pystray
-from pystray import MenuItem, Menu
+from PIL import Image
+from pystray import Menu, MenuItem
 
 from src.domain.config.models import AppConfig
 from src.infrastructure.event_bus import EventBus
 from src.infrastructure.events import (
+    AppShutdown,
     PlaybackPaused,
     PlaybackResumed,
     PlaybackStarted,
@@ -20,7 +20,6 @@ from src.infrastructure.events import (
     PlaybackStopped,
     TrayAction,
     TrayActionType,
-    AppShutdown,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,7 +30,6 @@ _DEFAULT_ICON_COLOR = (0, 150, 136)  # Teal
 
 
 class PystrayTrayService:
-
     def __init__(
         self,
         config: AppConfig,
@@ -55,35 +53,55 @@ class PystrayTrayService:
                 logger.warning("Failed to load icon from %s", self._icon_path)
 
         # Create a default teal square icon
-        img = Image.new("RGB", (_DEFAULT_ICON_SIZE, _DEFAULT_ICON_SIZE), _DEFAULT_ICON_COLOR)
+        img = Image.new(
+            "RGB", (_DEFAULT_ICON_SIZE, _DEFAULT_ICON_SIZE), _DEFAULT_ICON_COLOR
+        )
         return img
 
     def _create_menu(self) -> Menu:
         return Menu(
             MenuItem("🖥 Show/Hide Widget", self._on_toggle_widget, default=True),
             pystray.Menu.SEPARATOR,
-            MenuItem("▶ Resume", self._on_resume, visible=lambda _: self._state == PlaybackState.PAUSED),
-            MenuItem("⏸ Pause", self._on_pause, visible=lambda _: self._state == PlaybackState.PLAYING),
+            MenuItem(
+                "▶ Resume",
+                self._on_resume,
+                visible=lambda _: self._state == PlaybackState.PAUSED,
+            ),
+            MenuItem(
+                "⏸ Pause",
+                self._on_pause,
+                visible=lambda _: self._state == PlaybackState.PLAYING,
+            ),
             MenuItem("⏹ Stop", self._on_stop),
             pystray.Menu.SEPARATOR,
-            MenuItem("Speed", Menu(
-                MenuItem("0.75x", lambda: self._on_change_speed("0.75")),
-                MenuItem("1.0x", lambda: self._on_change_speed("1.0")),
-                MenuItem("1.25x", lambda: self._on_change_speed("1.25")),
-                MenuItem("1.5x", lambda: self._on_change_speed("1.5")),
-                MenuItem("2.0x", lambda: self._on_change_speed("2.0")),
-            )),
-            MenuItem("Voice", Menu(
-                MenuItem("Ardi (Male ID)", lambda: self._on_change_voice("male")),
-                MenuItem("Gadis (Female ID)", lambda: self._on_change_voice("female")),
-            )),
+            MenuItem(
+                "Speed",
+                Menu(
+                    MenuItem("0.75x", lambda: self._on_change_speed("0.75")),
+                    MenuItem("1.0x", lambda: self._on_change_speed("1.0")),
+                    MenuItem("1.25x", lambda: self._on_change_speed("1.25")),
+                    MenuItem("1.5x", lambda: self._on_change_speed("1.5")),
+                    MenuItem("2.0x", lambda: self._on_change_speed("2.0")),
+                ),
+            ),
+            MenuItem(
+                "Voice",
+                Menu(
+                    MenuItem("Ardi (Male ID)", lambda: self._on_change_voice("male")),
+                    MenuItem(
+                        "Gadis (Female ID)", lambda: self._on_change_voice("female")
+                    ),
+                ),
+            ),
             pystray.Menu.SEPARATOR,
             MenuItem("Exit", self._on_exit),
         )
 
     def _on_toggle_widget(self, icon=None, item=None) -> None:
-        self._publish_event(TrayAction(action=TrayActionType.TOGGLE_MODE, value="toggle_window"))
-    
+        self._publish_event(
+            TrayAction(action=TrayActionType.TOGGLE_MODE, value="toggle_window")
+        )
+
     # _on_show_widget removed in favor of toggle
 
     def _get_tooltip(self) -> str:
@@ -117,9 +135,9 @@ class PystrayTrayService:
         self._publish_event(TrayAction(action=TrayActionType.CHANGE_SPEED, value=speed))
 
     def _on_change_voice(self, gender: str) -> None:
-        self._publish_event(TrayAction(action=TrayActionType.CHANGE_VOICE, value=gender))
-
-
+        self._publish_event(
+            TrayAction(action=TrayActionType.CHANGE_VOICE, value=gender)
+        )
 
     def _publish_event(self, event: object) -> None:
         asyncio.run_coroutine_threadsafe(

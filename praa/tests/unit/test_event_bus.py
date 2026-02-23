@@ -5,16 +5,16 @@ Validates the core pub/sub infrastructure that all domain
 communication depends on.
 """
 
-import asyncio
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 # Ensure src is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from src.infrastructure.event_bus import EventBus
-from src.infrastructure.events import HotkeyPressed, HotkeyAction, TextCaptured
+from src.infrastructure.events import HotkeyAction, HotkeyPressed, TextCaptured
 
 
 @pytest.fixture
@@ -126,6 +126,7 @@ async def test_unsubscribe(event_bus):
 @pytest.mark.asyncio
 async def test_clear(event_bus):
     """Clear should remove all subscriptions."""
+
     async def handler(event):
         pass
 

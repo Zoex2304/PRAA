@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 import flet as ft
@@ -10,7 +11,6 @@ from src.presentation.components.upload_record_card import UploadRecordCard
 
 
 class UploadSectionComponent(ft.Container):
-
     def __init__(self, theme: ThemeConfig, **kwargs):
         super().__init__(**kwargs)
         self._theme = theme
@@ -51,7 +51,5 @@ class UploadSectionComponent(ft.Container):
             card.complete()
 
     def _safe_update(self, control: ft.Control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

@@ -1,8 +1,8 @@
-
 from __future__ import annotations
 
+import contextlib
 import logging
-from typing import Callable, Dict, Optional
+from collections.abc import Callable
 
 import flet as ft
 
@@ -12,13 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 class DbPage(ft.Container):
-
     def __init__(
         self,
         theme: ThemeConfig,
-        get_stats: Optional[Callable[[], Dict]] = None,
-        on_clear_cache: Optional[Callable[[], int]] = None,
-        on_flush_all: Optional[Callable[[], Dict]] = None,
+        get_stats: Callable[[], dict] | None = None,
+        on_clear_cache: Callable[[], int] | None = None,
+        on_flush_all: Callable[[], dict] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -142,17 +141,23 @@ class DbPage(ft.Container):
         dlg = ft.AlertDialog(
             modal=True,
             bgcolor=colors.bg_panel,
-            title=ft.Text("Clear Audio Cache?", size=typo.font_size_sm, color=colors.text_primary),
+            title=ft.Text(
+                "Clear Audio Cache?", size=typo.font_size_sm, color=colors.text_primary
+            ),
             content=ft.Text(
                 "All cached audio files will be deleted.\nSession history records are kept.",
                 size=typo.font_size_xs,
                 color=colors.text_dim,
             ),
             actions=[
-                ft.TextButton("Cancel", on_click=lambda _: self.page.pop_dialog(),
-                              style=ft.ButtonStyle(color=colors.text_muted)),
-                ft.TextButton("Clear", on_click=_do_clear,
-                              style=ft.ButtonStyle(color="#f87171")),
+                ft.TextButton(
+                    "Cancel",
+                    on_click=lambda _: self.page.pop_dialog(),
+                    style=ft.ButtonStyle(color=colors.text_muted),
+                ),
+                ft.TextButton(
+                    "Clear", on_click=_do_clear, style=ft.ButtonStyle(color="#f87171")
+                ),
             ],
         )
         self.page.show_dialog(dlg)
@@ -167,28 +172,42 @@ class DbPage(ft.Container):
             self.page.pop_dialog()
             if self._on_flush_all:
                 result = self._on_flush_all()
+                ocr = result.get("ocr_files", 0)
+                ocr_part = f", {ocr} OCR files" if ocr else ""
                 self._set_status(
-                    f"Deleted {result.get('sessions', 0)} sessions "
-                    f"and {result.get('files', 0)} files."
+                    f"Deleted {result.get('sessions', 0)} sessions, "
+                    f"{result.get('files', 0)} cache files{ocr_part}. "
+                    "Restart PRAA to see the onboarding screen."
                 )
                 self.refresh()
 
         dlg = ft.AlertDialog(
             modal=True,
             bgcolor=colors.bg_panel,
-            title=ft.Text("Flush All Data?", size=typo.font_size_sm, color="#fca5a5",
-                          weight=ft.FontWeight.BOLD),
+            title=ft.Text(
+                "Flush All Data?",
+                size=typo.font_size_sm,
+                color="#fca5a5",
+                weight=ft.FontWeight.BOLD,
+            ),
             content=ft.Text(
-                "This will permanently delete ALL session history\n"
-                "and ALL cached audio files. This cannot be undone.",
+                "This will permanently delete ALL session history, cached audio,\n"
+                "and OCR debug screenshots. App state is fully reset.\n"
+                "Restart PRAA after flushing to see the onboarding screen again.",
                 size=typo.font_size_xs,
                 color=colors.text_dim,
             ),
             actions=[
-                ft.TextButton("Cancel", on_click=lambda _: self.page.pop_dialog(),
-                              style=ft.ButtonStyle(color=colors.text_muted)),
-                ft.TextButton("Delete Everything", on_click=_do_flush,
-                              style=ft.ButtonStyle(color="#ef4444")),
+                ft.TextButton(
+                    "Cancel",
+                    on_click=lambda _: self.page.pop_dialog(),
+                    style=ft.ButtonStyle(color=colors.text_muted),
+                ),
+                ft.TextButton(
+                    "Delete Everything",
+                    on_click=_do_flush,
+                    style=ft.ButtonStyle(color="#ef4444"),
+                ),
             ],
         )
         self.page.show_dialog(dlg)
@@ -220,7 +239,5 @@ class DbPage(ft.Container):
         self._safe_update(self._status_text)
 
     def _safe_update(self, control: ft.Control) -> None:
-        try:
+        with contextlib.suppress(Exception):
             control.update()
-        except Exception:
-            pass

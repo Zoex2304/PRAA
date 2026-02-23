@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+
 import flet as ft
 
 from src.domain.config.theme_config import ThemeConfig
@@ -59,13 +61,15 @@ class QueueChunkRow(ft.Container):
     def update_status(self, status: str, name: str = "") -> None:
         colors = self._theme.colors
         status_cfg: dict[str, tuple[str, str, bool]] = {
-            "pending":    ("Pending",      colors.chunk_pending,     False),
+            "pending": ("Pending", colors.chunk_pending, False),
             "processing": ("Synthesizing…", colors.chunk_processing, False),
-            "ready":      ("Ready",         colors.chunk_ready,       False),
-            "playing":    ("▶ Playing",     colors.chunk_playing,     True),
-            "done":       ("✓ Done",        colors.chunk_done,        False),
+            "ready": ("Ready", colors.chunk_ready, False),
+            "playing": ("▶ Playing", colors.chunk_playing, True),
+            "done": ("✓ Done", colors.chunk_done, False),
         }
-        label, color, show_progress = status_cfg.get(status, ("", colors.text_muted, False))
+        label, color, show_progress = status_cfg.get(
+            status, ("", colors.text_muted, False)
+        )
         self._status_text.value = label
         self._status_text.color = color
         self._progress.visible = show_progress
@@ -83,7 +87,5 @@ class QueueChunkRow(ft.Container):
             self._safe_update()
 
     def _safe_update(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.update()
-        except Exception:
-            pass

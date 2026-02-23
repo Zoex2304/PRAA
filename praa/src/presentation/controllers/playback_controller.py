@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from typing import Any
 
 from src.domain.widget.state import PlaybackStateManager
 from src.infrastructure.event_bus import EventBus
@@ -18,7 +20,7 @@ class PlaybackController:
     def set_transcript(self, text: str):
         self._transcript_text = text
 
-    def toggle_play(self, publish: callable):
+    def toggle_play(self, publish: Callable[..., Any]):
         info = self._state_manager.get_state_info()
         if info.can_pause:
             publish(TrayAction(action=TrayActionType.PAUSE))
@@ -27,14 +29,14 @@ class PlaybackController:
         elif info.can_play and self._transcript_text:
             publish(TextCaptured(raw_text=self._transcript_text))
 
-    def change_voice(self, value: str, publish: callable):
+    def change_voice(self, value: str, publish: Callable[..., Any]):
         gender = "male" if value == "Ardi" else "female"
         publish(TrayAction(action=TrayActionType.CHANGE_VOICE, value=gender))
         logger.info("Voice changed: %s", value)
         if self._transcript_text and not self._state_manager.is_idle:
             publish(TextCaptured(raw_text=self._transcript_text))
 
-    def change_speed(self, value: str, publish: callable):
+    def change_speed(self, value: str, publish: Callable[..., Any]):
         speed = value.replace("x", "")
         publish(TrayAction(action=TrayActionType.CHANGE_SPEED, value=speed))
         logger.info("Speed changed: %s", value)
