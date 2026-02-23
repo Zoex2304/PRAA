@@ -130,11 +130,20 @@ class HomePage(ft.Container):
 
     def _copy_to_clipboard(self, text: str) -> None:
         if self.page:
-            self.page.set_clipboard(text)
-            sb = ft.SnackBar(content=ft.Text("Copied to clipboard"), duration=1500)
-            self.page.overlay.append(sb)
-            sb.open = True
-            self.page.update()
+            self.page.run_task(self._clipboard_set, text)
+
+    async def _clipboard_set(self, text: str) -> None:
+        clip = ft.Clipboard()
+        self.page.overlay.append(clip)
+        self.page.update()
+        try:
+            await clip.set(text)
+        finally:
+            self.page.overlay.remove(clip)
+        sb = ft.SnackBar(content=ft.Text("Copied to clipboard"), duration=1500)
+        self.page.overlay.append(sb)
+        sb.open = True
+        self.page.update()
 
     def _safe_update(self, control: ft.Control) -> None:
         try:

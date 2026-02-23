@@ -6,6 +6,7 @@ from typing import Optional
 
 from src.domain.ocr.capture import ScreenCaptureService
 from src.domain.ocr.config import CAPTURE_DELAY_S
+from src.domain.ocr.debug_writer import OcrDebugWriter
 from src.domain.ocr.overlay import OverlayController, Region
 from src.domain.ocr.reader import OcrReaderService
 from src.infrastructure.event_bus import EventBus
@@ -28,12 +29,14 @@ class OcrService:
         capture_service: ScreenCaptureService,
         overlay: OverlayController,
         reader_service: OcrReaderService,
+        debug_writer: OcrDebugWriter,
     ) -> None:
         self._event_bus = event_bus
         self._loop = loop
         self._capture = capture_service
         self._overlay = overlay
         self._reader = reader_service
+        self._debug_writer = debug_writer
 
     async def handle_ocr_requested(self, event: OcrCaptureRequested) -> None:
         logger.info("OCR capture requested — showing overlay")
@@ -60,6 +63,7 @@ class OcrService:
 
     async def _process_region(self, region: Region) -> None:
         x, y, w, h = region
+        self._debug_writer.start_run()
 
         await asyncio.sleep(CAPTURE_DELAY_S)
 

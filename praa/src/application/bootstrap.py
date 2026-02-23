@@ -16,6 +16,8 @@ from src.domain.config.theme_config import ThemeConfig
 from src.domain.dbmanager.service import DbManagerService
 from src.domain.hotkey.service import PynputHotkeyService
 from src.domain.ocr.capture import ScreenCaptureService
+from src.domain.ocr.config import DEBUG_OUTPUT_DIR
+from src.domain.ocr.debug_writer import OcrDebugWriter
 from src.domain.ocr.overlay import OverlayController
 from src.domain.ocr.reader import OcrReaderService
 from src.domain.ocr.service import OcrService
@@ -92,13 +94,15 @@ class Application:
         self._audio_service = AudioService(self._event_bus, loop)
         self._hotkey_service = PynputHotkeyService(config, self._event_bus, loop)
 
-        ocr_reader = OcrReaderService()
+        ocr_debug_writer = OcrDebugWriter(DEBUG_OUTPUT_DIR)
+        ocr_reader = OcrReaderService(debug_writer=ocr_debug_writer)
         self._ocr_service = OcrService(
             event_bus=self._event_bus,
             loop=loop,
-            capture_service=ScreenCaptureService(),
+            capture_service=ScreenCaptureService(debug_writer=ocr_debug_writer),
             overlay=OverlayController(),
             reader_service=ocr_reader,
+            debug_writer=ocr_debug_writer,
         )
         self._upload_service = UploadService(
             event_bus=self._event_bus,

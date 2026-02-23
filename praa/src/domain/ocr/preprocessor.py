@@ -1,31 +1,26 @@
 from __future__ import annotations
 
-from PIL import Image, ImageOps, ImageStat
+import logging
+
+from PIL import Image, ImageOps
 
 from src.domain.ocr.config import (
     BORDER_PADDING_PX,
-    DARK_MEAN_THRESHOLD,
     MAX_SCALED_DIM_PX,
     MIN_SCALED_DIM_PX,
     SCALE_FACTOR,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class OcrPreprocessor:
 
     def process(self, image: Image.Image) -> Image.Image:
-        gray = image.convert("L")
-        normalized = self._normalize_polarity(gray)
-        contrasted = ImageOps.autocontrast(normalized, cutoff=0)
-        padded = ImageOps.expand(contrasted, border=BORDER_PADDING_PX, fill=255)
-        upscaled = self._scale(padded)
-        return upscaled.convert("RGB")
-
-    def _normalize_polarity(self, image: Image.Image) -> Image.Image:
-        mean = ImageStat.Stat(image).mean[0]
-        if mean < DARK_MEAN_THRESHOLD:
-            return ImageOps.invert(image)
-        return image
+        padded = ImageOps.expand(image, border=BORDER_PADDING_PX, fill=(255, 255, 255))
+        scaled = self._scale(padded)
+        logger.debug("[SCALE] scale_factor=%d  result=%d×%dpx", SCALE_FACTOR, scaled.width, scaled.height)
+        return scaled
 
     def _scale(self, image: Image.Image) -> Image.Image:
         w, h = image.size
